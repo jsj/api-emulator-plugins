@@ -51,6 +51,17 @@ npx api-emulator init \
 | PostHog | `@posthog/api-emulator.mjs` | Capture, batch, persons, groups, identify, alias, feature flags, decide, experiments |
 | Replicate | `@replicate/api-emulator.mjs` | Model predictions |
 
+## Core examples
+
+The main [api-emulator](https://github.com/jsj/api-emulator) repo has runnable app examples for the default plugin catalog:
+
+- [OAuth](https://github.com/jsj/api-emulator/tree/main/examples/oauth)
+- [Next.js embedded mode](https://github.com/jsj/api-emulator/tree/main/examples/nextjs-embedded)
+- [Resend magic link](https://github.com/jsj/api-emulator/tree/main/examples/resend-magic-link)
+- [Stripe checkout](https://github.com/jsj/api-emulator/tree/main/examples/stripe-checkout)
+
+Use this repo when those examples need providers outside the default catalog, or when you want to share a provider plugin independently from the runtime.
+
 ## Plugin shape
 
 An external plugin exports a `plugin` object that satisfies the `ServicePlugin` interface from `@emulators/core`.
