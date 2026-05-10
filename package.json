@@ -1,0 +1,9 @@
+{
+  "name": "api-emulator-plugins",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "smoke": "node scripts/smoke-all.mjs"
+  }
+}

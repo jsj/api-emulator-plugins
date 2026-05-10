@@ -105,15 +105,21 @@ Larger plugins can be small packages:
 
 ## Smoke testing
 
-Some plugins include a smoke script. Start the plugin with `api-emulator`, then run the smoke script in another shell:
+Some plugins include a smoke script. Run all repository-level smoke tests with:
 
 ```bash
-npx api-emulator \
-  --plugin ./@posthog/api-emulator.mjs \
-  --service posthog
+bun run smoke
+```
 
+You can also run an individual smoke test directly:
+
+```bash
 node ./@posthog/smoke.mjs
 ```
+
+## License
+
+MIT. See [`LICENSE`](./LICENSE).
 
 ## Philosophy
 
