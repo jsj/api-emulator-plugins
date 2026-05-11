@@ -966,5 +966,14 @@ export const plugin = cloudflarePlugin;
 export const label = "Cloudflare API emulator";
 export const endpoints =
   "Workers AI /client/v4/accounts/:accountId/ai/models/search and /ai/run/*, Send Email /email/send, D1, KV, R2, Queues, Workflows, Loader, Analytics Engine, Sandbox, Durable Objects";
+export const manifest = {
+  name: "cloudflare",
+  label,
+  endpoints,
+  contract,
+  compatibility: {
+    apiEmulator: ">=0.5.1",
+  },
+};
 export const capabilities = [...contract.scope];
 export default cloudflarePlugin;

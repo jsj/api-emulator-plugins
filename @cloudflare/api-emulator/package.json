@@ -1,9 +1,37 @@
 {
-  "name": "@cloudflare/api-emulator",
-  "private": true,
+  "name": "@api-emulator/cloudflare",
+  "version": "0.1.0",
+  "description": "Cloudflare API emulator plugin for api-emulator",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
   },
-  "license": "MIT"
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts",
+    "prepack": "bun run build"
+  },
+  "keywords": [
+    "api-emulator",
+    "cloudflare",
+    "workers",
+    "d1",
+    "kv",
+    "r2"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "tsup": "^8",
+    "typescript": "^5.7"
+  },
+  "peerDependencies": {
+    "api-emulator": ">=0.5.1"
+  }
 }
