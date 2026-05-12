@@ -1,6 +1,32 @@
 type WorkersAiInput = {
   messages?: Array<{ role: string; content: string }>;
   stream?: boolean;
+  text?: string[];
+};
+
+type VectorizeVector = {
+  id: string;
+  values?: number[];
+  vector?: number[];
+  metadata?: Record<string, unknown>;
+  namespace?: string;
+};
+
+type VectorizeQueryInput = {
+  vector?: number[];
+  topK?: number;
+  returnValues?: boolean;
+  returnMetadata?: boolean | "none" | "indexed" | "all";
+  filter?: Record<string, unknown>;
+  namespace?: string;
+};
+
+type VectorizeMatch = {
+  id: string;
+  score: number;
+  values?: number[];
+  metadata?: Record<string, unknown>;
+  namespace?: string;
 };
 
 type AppLike = {
@@ -36,6 +62,7 @@ export const contract = {
     "analytics-engine",
     "sandbox",
     "durable-objects",
+    "vectorize",
   ],
   fidelity: "binding-resource-model-subset",
 } as const;
@@ -67,6 +94,7 @@ type CloudflarePlatformOptions = {
   analyticsDatasets?: string[];
   loader?: Partial<LoaderEmulator>;
   r2Buckets?: string[];
+  vectorizeIndexes?: string[];
   durableObjects?: Record<
     string,
     new (
@@ -272,6 +300,10 @@ function extractContext(userText: string) {
 function createAiBinding() {
   return {
     async run(_model: string, input: WorkersAiInput) {
+      if (Array.isArray(input.text)) {
+        return { data: input.text.map(deterministicEmbedding) };
+      }
+
       const response = generateAiText(extractUserText(input));
       if (!input.stream) return { response };
 
@@ -286,6 +318,96 @@ function createAiBinding() {
       });
     },
   };
+}
+
+function deterministicEmbedding(text: string): number[] {
+  const value = [...text].reduce((sum, char) => sum + char.charCodeAt(0), 0);
+  return Array.from({ length: 8 }, (_, index) => ((value + index * 17) % 100) / 100);
+}
+
+const vectorizeIndexes = new Map<string, MemoryVectorizeIndex>();
+
+function vectorizeIndex(name: string): MemoryVectorizeIndex {
+  if (!vectorizeIndexes.has(name)) vectorizeIndexes.set(name, new MemoryVectorizeIndex(name));
+  return vectorizeIndexes.get(name)!;
+}
+
+function matchesFilter(metadata: Record<string, unknown> | undefined, filter?: Record<string, unknown>): boolean {
+  if (!filter || Object.keys(filter).length === 0) return true;
+  return Object.entries(filter).every(([key, expected]) => metadata?.[key] === expected);
+}
+
+function cosineSimilarity(a: number[], b: number[]): number {
+  const length = Math.min(a.length, b.length);
+  if (length === 0) return 0;
+  let dot = 0;
+  let aMagnitude = 0;
+  let bMagnitude = 0;
+  for (let i = 0; i < length; i++) {
+    dot += a[i] * b[i];
+    aMagnitude += a[i] * a[i];
+    bMagnitude += b[i] * b[i];
+  }
+  if (aMagnitude === 0 || bMagnitude === 0) return 0;
+  return dot / (Math.sqrt(aMagnitude) * Math.sqrt(bMagnitude));
+}
+
+function normalizeVector(vector: VectorizeVector): Required<Pick<VectorizeVector, "id" | "values">> & Omit<VectorizeVector, "id" | "values" | "vector"> {
+  return {
+    id: String(vector.id),
+    values: vector.values ?? vector.vector ?? [],
+    metadata: vector.metadata,
+    namespace: vector.namespace,
+  };
+}
+
+class MemoryVectorizeIndex {
+  private readonly vectors = new Map<string, ReturnType<typeof normalizeVector>>();
+
+  constructor(readonly name: string) {}
+
+  async upsert(vectors: VectorizeVector[]) {
+    for (const vector of vectors) {
+      const normalized = normalizeVector(vector);
+      this.vectors.set(normalized.id, normalized);
+    }
+    return {
+      mutationId: `emu-vectorize-${this.name}-${Date.now()}`,
+      count: vectors.length,
+    };
+  }
+
+  async query(vector: number[], options: Omit<VectorizeQueryInput, "vector"> = {}) {
+    const topK = Math.max(0, Math.min(Number(options.topK ?? 5), 100));
+    const returnMetadata = options.returnMetadata === true || options.returnMetadata === "all" || options.returnMetadata === "indexed";
+    const matches = Array.from(this.vectors.values())
+      .filter((item) => !options.namespace || item.namespace === options.namespace)
+      .filter((item) => matchesFilter(item.metadata, options.filter))
+      .map((item): VectorizeMatch => ({
+        id: item.id,
+        score: cosineSimilarity(vector, item.values),
+        ...(options.returnValues ? { values: item.values } : {}),
+        ...(returnMetadata ? { metadata: item.metadata ?? {} } : {}),
+        ...(item.namespace ? { namespace: item.namespace } : {}),
+      }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, topK);
+    return { count: matches.length, matches };
+  }
+
+  async getByIds(ids: string[]) {
+    return ids.map((id) => this.vectors.get(id)).filter(Boolean);
+  }
+
+  async deleteByIds(ids: string[]) {
+    let count = 0;
+    for (const id of ids) if (this.vectors.delete(id)) count += 1;
+    return { mutationId: `emu-vectorize-${this.name}-${Date.now()}`, count };
+  }
+
+  list() {
+    return Array.from(this.vectors.values());
+  }
 }
 
 function workersAiRoutes(app: AppLike): void {
@@ -305,6 +427,15 @@ function workersAiRoutes(app: AppLike): void {
 
   app.post("/client/v4/accounts/:accountId/ai/run/*", async (c: any) => {
     const input = (await c.req.json().catch(() => ({}))) as WorkersAiInput;
+    if (Array.isArray(input.text)) {
+      return c.json({
+        success: true,
+        errors: [],
+        messages: [],
+        result: { data: input.text.map(deterministicEmbedding) },
+      });
+    }
+
     const response = generateAiText(extractUserText(input));
 
     return c.json({
@@ -320,6 +451,37 @@ function workersAiRoutes(app: AppLike): void {
       },
     });
   });
+}
+
+function vectorizeRoutes(app: AppLike): void {
+  app.post("/client/v4/accounts/:accountId/vectorize/v2/indexes/:indexName/query", async (c: any) => {
+    const input = (await c.req.json().catch(() => ({}))) as VectorizeQueryInput;
+    const result = await vectorizeIndex(c.req.param("indexName")).query(input.vector ?? [], input);
+    return c.json({ success: true, errors: [], messages: [], result });
+  });
+
+  app.post("/client/v4/accounts/:accountId/vectorize/v2/indexes/:indexName/upsert", async (c: any) => {
+    const body = (await c.req.json().catch(() => ({}))) as { vectors?: VectorizeVector[] } | VectorizeVector[];
+    const vectors = Array.isArray(body) ? body : body.vectors ?? [];
+    const result = await vectorizeIndex(c.req.param("indexName")).upsert(vectors);
+    return c.json({ success: true, errors: [], messages: [], result });
+  });
+
+  app.post("/client/v4/accounts/:accountId/vectorize/v2/indexes/:indexName/get_by_ids", async (c: any) => {
+    const body = (await c.req.json().catch(() => ({}))) as { ids?: string[] };
+    const vectors = await vectorizeIndex(c.req.param("indexName")).getByIds(body.ids ?? []);
+    return c.json({ success: true, errors: [], messages: [], result: { vectors } });
+  });
+
+  app.post("/client/v4/accounts/:accountId/vectorize/v2/indexes/:indexName/delete_by_ids", async (c: any) => {
+    const body = (await c.req.json().catch(() => ({}))) as { ids?: string[] };
+    const result = await vectorizeIndex(c.req.param("indexName")).deleteByIds(body.ids ?? []);
+    return c.json({ success: true, errors: [], messages: [], result });
+  });
+
+  app.get?.("/inspect/vectorize", (c: any) =>
+    c.json(Object.fromEntries(Array.from(vectorizeIndexes.entries()).map(([name, index]) => [name, index.list()]))),
+  );
 }
 
 class MemoryD1Database {
@@ -981,6 +1143,10 @@ export function createCloudflareBindings(
     env[bucketName] = new MemoryR2Bucket();
   }
 
+  for (const indexName of options.vectorizeIndexes ?? ["VECTORIZE_INDEX"]) {
+    env[indexName] = vectorizeIndex(indexName);
+  }
+
   for (const [binding, DurableObjectClass] of Object.entries(
     options.durableObjects ?? {},
   )) {
@@ -1126,6 +1292,7 @@ export const cloudflarePlugin: ServicePlugin = {
   name: "cloudflare",
   register(app: AppLike) {
     workersAiRoutes(app);
+    vectorizeRoutes(app);
 
     app.post("/email/send", async (c: any) => {
       const input = (await c.req.json().catch(() => ({}))) as SendEmailInput;
@@ -1177,7 +1344,7 @@ export const cloudflarePlugin: ServicePlugin = {
 export const plugin = cloudflarePlugin;
 export const label = "Cloudflare API emulator";
 export const endpoints =
-  "Workers AI /client/v4/accounts/:accountId/ai/models/search and /ai/run/*, Send Email /email/send, D1, KV, R2, Queues, Workflows, Loader, Analytics Engine, Sandbox, Durable Objects";
+  "Workers AI /client/v4/accounts/:accountId/ai/models/search and /ai/run/*, Vectorize v2 /query and /upsert, Send Email /email/send, D1, KV, R2, Queues, Workflows, Loader, Analytics Engine, Sandbox, Durable Objects";
 export const manifest = {
   name: "cloudflare",
   label,

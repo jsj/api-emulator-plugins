@@ -9,6 +9,12 @@ const smokeFiles = [
   '@apple/smoke.mjs',
   '@alpaca/smoke.mjs',
   '@kalshi/smoke.mjs',
+  '@plaid/smoke.mjs',
+  '@perplexity/smoke.mjs',
+  '@polymarket/smoke.mjs',
+  '@fred/smoke.mjs',
+  '@sec/smoke.mjs',
+  '@fal/smoke.mjs',
 ];
 
 for (const file of smokeFiles) {
