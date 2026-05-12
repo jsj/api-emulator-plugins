@@ -1,0 +1,12 @@
+{
+  "name": "@kalshi/trading-emulator",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "devDependencies": {
+    "bun-types": "^1.3.13"
+  },
+  "license": "MIT"
+}

@@ -7,6 +7,8 @@ const smokeFiles = [
   '@posthog/smoke.mjs',
   '@github/smoke.mjs',
   '@apple/smoke.mjs',
+  '@alpaca/smoke.mjs',
+  '@kalshi/smoke.mjs',
 ];
 
 for (const file of smokeFiles) {
