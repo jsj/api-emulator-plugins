@@ -80,6 +80,23 @@ type CloudflarePlatformOptions = {
 type D1SeedData = {
   problems?: D1Row[];
   sessions?: D1Row[];
+  schema?: string[];
+  tables?: Record<string, D1Row[]>;
+};
+type D1ColumnInfo = {
+  cid: number;
+  name: string;
+  type: string;
+  notnull: number;
+  dflt_value: unknown;
+  pk: number;
+};
+type D1ForeignKeyInfo = {
+  id: number;
+  seq: number;
+  table: string;
+  from: string;
+  to: string;
 };
 
 type SendEmailInput = {
@@ -307,27 +324,50 @@ function workersAiRoutes(app: AppLike): void {
 
 class MemoryD1Database {
   private readonly tables = new Map<string, D1Row[]>();
+  private readonly schema = new Map<string, { sql: string; columns: D1ColumnInfo[]; foreignKeys: D1ForeignKeyInfo[] }>();
+  private lastInserted: { table: string; row: D1Row } | null = null;
 
   constructor(seed?: D1SeedData) {
-    this.tables.set("problems", [...(seed?.problems ?? [])]);
-    this.tables.set("sessions", [...(seed?.sessions ?? [])]);
+    if (seed?.schema || seed?.tables) {
+      for (const statement of seed.schema ?? []) this.addTableSchema(statement);
+      for (const [name, rows] of Object.entries(seed.tables ?? {})) {
+        this.ensureTable(name);
+        this.tables.set(name, rows.map((row) => ({ ...row })));
+      }
+    } else {
+      this.tables.set("problems", [...(seed?.problems ?? [])]);
+      this.tables.set("sessions", [...(seed?.sessions ?? [])]);
+    }
   }
 
   prepare(sql: string) {
     return new MemoryD1PreparedStatement(this, sql);
   }
 
+  async batch(statements: MemoryD1PreparedStatement[]) {
+    return Promise.all(statements.map((statement) => statement.run()));
+  }
+
   select(sql: string, params: unknown[]): D1Row[] {
     const normalized = normalizeSql(sql);
+    if (normalized.includes("from sqlite_master")) return this.sqliteMasterRows();
+    if (normalized.startsWith("pragma table_info")) return this.tableInfoRows(sql);
+    if (normalized.startsWith("pragma foreign_key_list")) return this.foreignKeyRows(sql);
+    if (normalized.includes("last_insert_rowid()")) return this.selectLastInserted(sql);
     if (normalized.includes("from problems"))
       return this.selectProblems(normalized, params);
     if (normalized.includes("from sessions"))
       return this.selectSessions(normalized, params);
+    if (normalized.startsWith("select")) return this.selectGeneric(sql, params);
     throw new Error(`Unsupported D1 query: ${sql}`);
   }
 
-  insert(sql: string, params: unknown[]) {
+  mutate(sql: string, params: unknown[]) {
     const normalized = normalizeSql(sql);
+    if (normalized.startsWith("insert into")) return this.insertGeneric(sql, params);
+    if (normalized.startsWith("update")) return this.updateGeneric(sql, params);
+    if (normalized.startsWith("delete from")) return this.deleteGeneric(sql, params);
+    if (["begin", "commit", "rollback"].includes(normalized)) return { success: true, meta: { changes: 0 }, results: [] };
     if (normalized.startsWith("insert into sessions")) {
       const [id, problem_id, title, language, instructions, starter_files] =
         params;
@@ -344,6 +384,169 @@ class MemoryD1Database {
       return { success: true, meta: { changes: 1 }, results: [] };
     }
     throw new Error(`Unsupported D1 mutation: ${sql}`);
+  }
+
+  async exec(sql: string) {
+    return this.mutate(sql, []);
+  }
+
+  private addTableSchema(statement: string) {
+    const match = statement.match(/create\s+table\s+["`]?(\w+)["`]?\s*\(([\s\S]+)\)/i);
+    if (!match) return;
+
+    const [, table, body] = match;
+    const columns: D1ColumnInfo[] = [];
+    const foreignKeys: D1ForeignKeyInfo[] = [];
+    for (const part of body.split(",").map((value) => value.trim()).filter(Boolean)) {
+      const columnMatch = part.match(/^["`]?(\w+)["`]?\s+([a-z0-9_()]+)/i);
+      if (!columnMatch) continue;
+
+      const [, name, type] = columnMatch;
+      columns.push({
+        cid: columns.length,
+        name,
+        type: type.toUpperCase(),
+        notnull: /\bnot\s+null\b/i.test(part) ? 1 : 0,
+        dflt_value: null,
+        pk: /\bprimary\s+key\b/i.test(part) ? 1 : 0,
+      });
+
+      const reference = part.match(/\breferences\s+["`]?(\w+)["`]?\s*\(\s*["`]?(\w+)["`]?\s*\)/i);
+      if (reference) {
+        foreignKeys.push({
+          id: foreignKeys.length,
+          seq: 0,
+          table: reference[1],
+          from: name,
+          to: reference[2],
+        });
+      }
+    }
+
+    this.schema.set(table, { sql: statement, columns, foreignKeys });
+    this.ensureTable(table);
+  }
+
+  private ensureTable(name: string) {
+    if (!this.tables.has(name)) this.tables.set(name, []);
+    if (!this.schema.has(name)) {
+      const first = this.tables.get(name)?.[0] ?? {};
+      this.schema.set(name, {
+        sql: null as unknown as string,
+        columns: Object.keys(first).map((column, index) => ({
+          cid: index,
+          name: column,
+          type: "TEXT",
+          notnull: 0,
+          dflt_value: null,
+          pk: column === "id" ? 1 : 0,
+        })),
+        foreignKeys: [],
+      });
+    }
+  }
+
+  private sqliteMasterRows(): D1Row[] {
+    return [...this.schema.entries()].map(([name, info]) => ({ name, type: "table", sql: info.sql }));
+  }
+
+  private tableInfoRows(sql: string): D1Row[] {
+    const table = sql.match(/pragma\s+table_info\(["`]?(\w+)["`]?\)/i)?.[1] ?? "";
+    return this.schema.get(table)?.columns ?? [];
+  }
+
+  private foreignKeyRows(sql: string): D1Row[] {
+    const table = sql.match(/pragma\s+foreign_key_list\(["`]?(\w+)["`]?\)/i)?.[1] ?? "";
+    return this.schema.get(table)?.foreignKeys ?? [];
+  }
+
+  private selectLastInserted(sql: string): D1Row[] {
+    const table = this.extractTable(sql);
+    if (!this.lastInserted || this.lastInserted.table !== table) return [];
+    return [{ ...this.lastInserted.row }];
+  }
+
+  private selectGeneric(sql: string, params: unknown[]): D1Row[] {
+    const table = this.extractTable(sql);
+    let rows = [...this.table(table)];
+    const normalized = normalizeSql(sql);
+
+    if (normalized.includes("count(*)")) return [{ count: rows.length }];
+
+    const where = this.extractWhereColumn(sql);
+    if (where) rows = rows.filter((row) => row[where] === params[0]);
+
+    const limit = this.extractTrailingNumber(sql, "limit");
+    const offset = this.extractTrailingNumber(sql, "offset") ?? 0;
+    if (limit !== null) rows = rows.slice(offset, offset + limit);
+
+    const projection = this.extractProjection(sql);
+    return rows.map((row) => projectRow(row, projection));
+  }
+
+  private insertGeneric(sql: string, params: unknown[]) {
+    const table = this.extractMutationTable(sql, "insert into");
+    const columns = [...sql.matchAll(/\(\s*([^)]+)\s*\)/g)][0]?.[1]
+      .split(",")
+      .map(cleanIdentifier) ?? [];
+    const row = Object.fromEntries(columns.map((column, index) => [column, params[index]]));
+    this.table(table).push(row);
+    this.lastInserted = { table, row };
+    return { success: true, meta: { changes: 1 }, results: [] };
+  }
+
+  private updateGeneric(sql: string, params: unknown[]) {
+    const table = this.extractMutationTable(sql, "update");
+    const setColumns = sql.match(/\bset\s+(.+?)\s+where\b/i)?.[1]
+      .split(",")
+      .map((part) => cleanIdentifier(part.split("=")[0])) ?? [];
+    const where = this.extractWhereColumn(sql);
+    if (!where) throw new Error(`Unsupported D1 mutation: ${sql}`);
+    let changes = 0;
+    for (const row of this.table(table)) {
+      if (row[where] !== params[setColumns.length]) continue;
+      setColumns.forEach((column, index) => row[column] = params[index]);
+      changes++;
+    }
+    return { success: true, meta: { changes }, results: [] };
+  }
+
+  private deleteGeneric(sql: string, params: unknown[]) {
+    const table = this.extractMutationTable(sql, "delete from");
+    const where = this.extractWhereColumn(sql);
+    if (!where) throw new Error(`Unsupported D1 mutation: ${sql}`);
+    const rows = this.table(table);
+    const before = rows.length;
+    this.tables.set(table, rows.filter((row) => row[where] !== params[0]));
+    return { success: true, meta: { changes: before - this.table(table).length }, results: [] };
+  }
+
+  private extractTable(sql: string): string {
+    const table = sql.match(/\bfrom\s+["`]?(\w+)["`]?/i)?.[1];
+    if (!table) throw new Error(`Unsupported D1 query: ${sql}`);
+    return table;
+  }
+
+  private extractMutationTable(sql: string, keyword: string): string {
+    const pattern = new RegExp(`${keyword}\\s+["\\\`]?(\\w+)["\\\`]?`, "i");
+    const table = sql.match(pattern)?.[1];
+    if (!table) throw new Error(`Unsupported D1 mutation: ${sql}`);
+    return table;
+  }
+
+  private extractWhereColumn(sql: string): string | null {
+    return sql.match(/\bwhere\s+["`]?(\w+)["`]?\s*=/i)?.[1] ?? null;
+  }
+
+  private extractTrailingNumber(sql: string, keyword: "limit" | "offset"): number | null {
+    const value = sql.match(new RegExp(`\\b${keyword}\\s+(\\d+)`, "i"))?.[1];
+    return value ? Number(value) : null;
+  }
+
+  private extractProjection(sql: string): string[] | null {
+    const projection = sql.match(/select\s+(.+?)\s+from/i)?.[1]?.trim();
+    if (!projection || projection === "*" || /count\(\*\)/i.test(projection)) return null;
+    return projection.split(",").map(cleanIdentifier);
   }
 
   private selectProblems(sql: string, params: unknown[]): D1Row[] {
@@ -416,7 +619,7 @@ class MemoryD1PreparedStatement {
   }
 
   async run() {
-    return this.db.insert(this.sql, this.params);
+    return this.db.mutate(this.sql, this.params);
   }
 }
 
@@ -854,6 +1057,15 @@ function monacoPadSeed(): D1SeedData {
 
 function normalizeSql(sql: string): string {
   return sql.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function cleanIdentifier(value: string): string {
+  return value.trim().replace(/^[`"]|[`"]$/g, "");
+}
+
+function projectRow(row: D1Row, projection: string[] | null): D1Row {
+  if (!projection) return { ...row };
+  return Object.fromEntries(projection.map((column) => [column, row[column]]));
 }
 
 async function toBytes(
