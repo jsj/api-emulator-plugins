@@ -43,11 +43,9 @@ npx api-emulator init \
 | fal | `@fal/api-emulator.mjs` | Seedance queue text-to-video flow |
 | Gemini | `@gemini/api-emulator.mjs` | `generateContent` |
 | GitHub | `@github/api-emulator.mjs` | Apps, repos, refs, contents, issues, PRs, Actions, checks |
-| Jellyfin | `@jellyfin/api-emulator.mjs` | Auth, users, libraries, items, search, playback, streams |
 | Kubernetes | `@kubernetes/api-emulator/index.mjs` | Namespaces, nodes, pods, logs, events, deployments, K8sGPT results |
 | OpenAI | `@openai/api-emulator.mjs` | Images, edits, chat completions |
 | OpenRouter | `@openrouter/api-emulator.mjs` | Chat completions |
-| Pirate Bay | `@piratebay/api-emulator/src/index.ts` | API Bay metadata endpoints and precompiled top lists |
 | PostHog | `@posthog/api-emulator.mjs` | Capture, batch, persons, groups, identify, alias, feature flags, decide, experiments |
 | Replicate | `@replicate/api-emulator.mjs` | Model predictions |
 
