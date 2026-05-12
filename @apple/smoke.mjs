@@ -9,12 +9,36 @@ function createHarness() {
     post: (path, handler) => routes.set(`POST ${path}`, handler),
     patch: (path, handler) => routes.set(`PATCH ${path}`, handler),
     put: (path, handler) => routes.set(`PUT ${path}`, handler),
+    delete: (path, handler) => routes.set(`DELETE ${path}`, handler),
   };
   const store = {
     getData: (key) => data.get(key),
     setData: (key, value) => data.set(key, value),
+    collection: (key) => ({
+      all: () => data.get(key) ?? [],
+      insert: (value) => {
+        const items = data.get(key) ?? [];
+        const item = { ...value, id: crypto.randomUUID() };
+        data.set(key, [...items, item]);
+        return item;
+      },
+      findOneBy: (field, value) => (data.get(key) ?? []).find((item) => item[field] === value) ?? null,
+      update: (id, updates) => {
+        const items = data.get(key) ?? [];
+        const index = items.findIndex((item) => item.id === id);
+        if (index < 0) return null;
+        const updated = { ...items[index], ...updates };
+        items[index] = updated;
+        data.set(key, items);
+        return updated;
+      },
+      delete: (id) => {
+        data.set(key, (data.get(key) ?? []).filter((item) => item.id !== id));
+      },
+    }),
   };
-  plugin.register(app, store);
+  plugin.seed?.(store, 'http://apple.test');
+  plugin.register(app, store, undefined, 'http://apple.test');
   return {
     async call(method, path, body = {}, headers = {}, params = {}, query = {}) {
       const handler = routes.get(`${method} ${path}`);
@@ -37,6 +61,12 @@ function createHarness() {
           payload = value;
           return { status, payload };
         },
+        body: (value, nextStatus = 200) => {
+          status = nextStatus;
+          payload = value;
+          return { status, payload };
+        },
+        header: () => {},
       });
       return { status, payload };
     },
