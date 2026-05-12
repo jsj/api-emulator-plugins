@@ -1,5 +1,43 @@
 const IMAGE_TEXT = 'forge-openai-emulator-image';
 const IMAGE_BASE64 = Buffer.from(IMAGE_TEXT).toString('base64');
+const INTERACTIONS_KEY = 'api-emulator:interactions';
+
+function normalize(value) {
+  if (Array.isArray(value)) return value.map(normalize);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([key, val]) => [key, normalize(val)]));
+}
+
+function requestKey(value) {
+  return JSON.stringify(normalize(value));
+}
+
+function interactions(store) {
+  return store.getData(INTERACTIONS_KEY) ?? [];
+}
+
+function findRecordedResponse(store, endpoint, request) {
+  const key = requestKey(request);
+  return interactions(store)
+    .slice()
+    .reverse()
+    .find((entry) => entry.service === 'openai' && entry.method === 'POST' && entry.endpoint === endpoint && requestKey(entry.request) === key)?.response;
+}
+
+function recordInteraction(store, endpoint, request, response) {
+  store.setData(INTERACTIONS_KEY, [
+    ...interactions(store),
+    {
+      service: 'openai',
+      method: 'POST',
+      endpoint,
+      request: normalize(request),
+      response,
+      status: 200,
+      recordedAt: new Date().toISOString(),
+    },
+  ]);
+}
 
 export const plugin = {
   name: 'openai',
@@ -29,11 +67,15 @@ export const plugin = {
     app.post('/v1/chat/completions', async (c) => {
       const body = await c.req.json();
       store.setData('openai:last-chat-completion', body);
+      const recorded = findRecordedResponse(store, '/v1/chat/completions', body);
+      if (recorded) return c.json(recorded);
       const userMessage = body.messages?.findLast?.((message) => message.role === 'user')?.content ?? '';
-      return c.json({
+      const response = {
         id: 'emu_openai_chat_123',
         choices: [{ message: { role: 'assistant', content: `forge-openai-emulator-text: ${userMessage}` } }],
-      });
+      };
+      recordInteraction(store, '/v1/chat/completions', body, response);
+      return c.json(response);
     });
 
     app.get('/inspect/last-generation', (c) => c.json(store.getData('openai:last-generation') ?? null));

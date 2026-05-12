@@ -1,17 +1,21 @@
 # api-emulator-plugins
 
-Shared external plugins for [`api-emulator`](https://github.com/jsj/api-emulator).
+The public plugin shelf for [`api-emulator`](https://github.com/jsj/api-emulator).
 
-This repo is the public plugin shelf: provider-shaped local API emulators that can be loaded by the `api-emulator` runtime without adding more providers to the core package.
+Use this repo like an app store of local API emulators. Pick a provider, load it into `api-emulator`, then test your app against a fake API on localhost instead of hitting production, sandboxes, or someone else's server.
 
-## Use a plugin
+## Quick start
 
-Clone this repo next to your app or point at a plugin file directly:
+Clone the shelf next to your app:
 
 ```bash
 git clone https://github.com/jsj/api-emulator-plugins.git
+```
 
-npx api-emulator \
+Run one plugin:
+
+```bash
+npx -p api-emulator api \
   --plugin ./api-emulator-plugins/@posthog/api-emulator.mjs \
   --service posthog
 ```
@@ -19,7 +23,7 @@ npx api-emulator \
 Load more than one plugin with a comma-separated list:
 
 ```bash
-npx api-emulator \
+npx -p api-emulator api \
   --plugin ./api-emulator-plugins/@github/api-emulator.mjs,./api-emulator-plugins/@apple/api-emulator.mjs \
   --service github,apple
 ```
@@ -27,9 +31,31 @@ npx api-emulator \
 Generate seed config for a plugin:
 
 ```bash
-npx api-emulator init \
+npx -p api-emulator api init \
   --plugin ./api-emulator-plugins/@alpaca/trading-emulator/src/index.ts \
   --service alpaca
+```
+
+## How it fits together
+
+```text
+Your app
+  ↓
+api-emulator on localhost
+  ↓
+GitHub, PostHog, Cloudflare, OpenAI, and other plugin backed fake APIs
+```
+
+`api-emulator` stays the runtime spine. This repo keeps provider behavior in separate plugins so public, private, and internal emulators can evolve independently.
+
+## Fixtures for stochastic APIs
+
+OpenAI and Anthropic record chat/message request and response pairs into the runtime fixture store. Export a fixture after a useful run, then restore it later to replay the same response for the same request.
+
+```ts
+const fixture = openai.exportFixture({ metadata: { name: "happy-path-chat" } })
+
+openai.resetToFixture(fixture)
 ```
 
 ## Plugins
@@ -49,9 +75,9 @@ npx api-emulator init \
 | PostHog | `@posthog/api-emulator.mjs` | Capture, batch, persons, groups, identify, alias, feature flags, decide, experiments |
 | Replicate | `@replicate/api-emulator.mjs` | Model predictions |
 
-## Core examples
+## Core app examples
 
-The main [api-emulator](https://github.com/jsj/api-emulator) repo has runnable app examples for the default plugin catalog:
+The main [api-emulator](https://github.com/jsj/api-emulator) repo has runnable examples for common integration flows:
 
 - [OAuth](https://github.com/jsj/api-emulator/tree/main/examples/oauth)
 - [Next.js embedded mode](https://github.com/jsj/api-emulator/tree/main/examples/nextjs-embedded)
@@ -60,9 +86,9 @@ The main [api-emulator](https://github.com/jsj/api-emulator) repo has runnable a
 
 Use this repo when those examples need providers outside the default catalog, or when you want to share a provider plugin independently from the runtime.
 
-## Plugin shape
+## Write a plugin
 
-An external plugin exports a `plugin` object that satisfies the `ServicePlugin` interface from `@emulators/core`.
+A plugin exports a `plugin` object that satisfies the `ServicePlugin` interface from `@api-emulator/core`.
 
 ```js
 export const plugin = {
@@ -86,9 +112,9 @@ export const initConfig = {
 
 Optional exports:
 
-- `label`: display name for `npx api-emulator list`
+- `label`: display name for `npx -p api-emulator api list`
 - `endpoints`: short endpoint summary for `list`
-- `initConfig`: starter config emitted by `npx api-emulator init`
+- `initConfig`: starter config emitted by `npx -p api-emulator api init`
 - `seedFromConfig(store, baseUrl, config, webhooks)`: load config into emulator state
 - `defaultFallback(config)`: default auth fallback for token-protected providers
 
@@ -129,7 +155,3 @@ node ./@posthog/smoke.mjs
 ## License
 
 MIT. See [`LICENSE`](./LICENSE).
-
-## Philosophy
-
-`api-emulator` should stay a thin runtime spine. Provider behavior belongs behind plugin seams, where it can evolve independently, be shared publicly, or stay private inside a team.

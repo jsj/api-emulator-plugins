@@ -1,3 +1,42 @@
+const INTERACTIONS_KEY = 'api-emulator:interactions';
+
+function normalize(value) {
+  if (Array.isArray(value)) return value.map(normalize);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([key, val]) => [key, normalize(val)]));
+}
+
+function requestKey(value) {
+  return JSON.stringify(normalize(value));
+}
+
+function interactions(store) {
+  return store.getData(INTERACTIONS_KEY) ?? [];
+}
+
+function findRecordedResponse(store, endpoint, request) {
+  const key = requestKey(request);
+  return interactions(store)
+    .slice()
+    .reverse()
+    .find((entry) => entry.service === 'anthropic' && entry.method === 'POST' && entry.endpoint === endpoint && requestKey(entry.request) === key)?.response;
+}
+
+function recordInteraction(store, endpoint, request, response) {
+  store.setData(INTERACTIONS_KEY, [
+    ...interactions(store),
+    {
+      service: 'anthropic',
+      method: 'POST',
+      endpoint,
+      request: normalize(request),
+      response,
+      status: 200,
+      recordedAt: new Date().toISOString(),
+    },
+  ]);
+}
+
 function shotListResponse(prompt) {
   let sceneId = 'scene-01';
   try {
@@ -27,11 +66,13 @@ export const plugin = {
     app.post('/v1/messages', async (c) => {
       const body = await c.req.json();
       store.setData('anthropic:last-message', body);
+      const recorded = findRecordedResponse(store, '/v1/messages', body);
+      if (recorded) return c.json(recorded);
       const userMessage = body.messages?.findLast?.((message) => message.role === 'user')?.content ?? '';
       const prompt = Array.isArray(userMessage)
         ? userMessage.map((part) => part.text ?? '').join('\n')
         : String(userMessage);
-      return c.json({
+      const response = {
         id: 'msg_emulator_123',
         type: 'message',
         role: 'assistant',
@@ -40,7 +81,9 @@ export const plugin = {
         stop_reason: 'end_turn',
         stop_sequence: null,
         usage: { input_tokens: 10, output_tokens: 20 },
-      });
+      };
+      recordInteraction(store, '/v1/messages', body, response);
+      return c.json(response);
     });
 
     app.get('/inspect/last-message', (c) => c.json(store.getData('anthropic:last-message') ?? null));

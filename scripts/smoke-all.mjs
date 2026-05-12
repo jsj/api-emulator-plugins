@@ -2,6 +2,8 @@ import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 
 const smokeFiles = [
+  '@anthropic/smoke.mjs',
+  '@openai/smoke.mjs',
   '@posthog/smoke.mjs',
   '@github/smoke.mjs',
   '@apple/smoke.mjs',
