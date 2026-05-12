@@ -4,6 +4,7 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
+    "contract:cloudflare": "node scripts/check-cloudflare-openapi-coverage.mjs",
     "smoke": "node scripts/smoke-all.mjs"
   }
 }
