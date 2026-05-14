@@ -6,6 +6,7 @@ const smokeFiles = [
   '@openai/smoke.mjs',
   '@posthog/smoke.mjs',
   '@github/smoke.mjs',
+  '@sentry/smoke.mjs',
   '@google/smoke.mjs',
   '@apple/smoke.mjs',
   '@alpaca/smoke.mjs',

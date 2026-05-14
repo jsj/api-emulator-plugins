@@ -32,6 +32,8 @@ function githubState(store) {
     webhooks: [],
     statuses: [],
     installationTokens: [],
+    users: {},
+    stargazers: {},
     nextIssueNumber: 1,
     nextPullNumber: 1,
     nextRunId: 1000,
@@ -42,6 +44,7 @@ function githubState(store) {
     nextRepoId: 4000,
   };
   ensureRepository(initial, DEFAULT_OWNER, DEFAULT_REPO);
+  ensureUser(initial, DEFAULT_OWNER, { name: 'GitHub Emulator' });
   store.setData?.('github:state', initial);
   return initial;
 }
@@ -52,6 +55,67 @@ function saveState(store, state) {
 
 function repoFullName(owner = DEFAULT_OWNER, repo = DEFAULT_REPO) {
   return `${owner}/${repo}`;
+}
+
+function requestOrigin(c) {
+  try {
+    return new URL(c.req.url).origin;
+  } catch {
+    return 'https://api.github.com';
+  }
+}
+
+function ensureUser(state, login, spec = {}) {
+  state.users ??= {};
+  if (!state.users[login]) {
+    state.users[login] = {
+      login,
+      id: Object.keys(state.users).length + 1,
+      node_id: `github-emulator-user-${login}`,
+      avatar_url: `https://avatars.githubusercontent.com/u/${Object.keys(state.users).length + 1}?v=4`,
+      gravatar_id: '',
+      url: `https://api.github.com/users/${login}`,
+      html_url: `https://github.com/${login}`,
+      type: 'User',
+      site_admin: false,
+      name: null,
+      email: null,
+      company: null,
+      blog: '',
+      location: null,
+      bio: null,
+      public_repos: 0,
+      public_gists: 0,
+      followers: 0,
+      following: 0,
+      created_at: now(),
+      updated_at: now(),
+    };
+  }
+
+  Object.assign(state.users[login], {
+    ...spec,
+    login,
+    url: spec.url ?? `https://api.github.com/users/${login}`,
+    html_url: spec.html_url ?? `https://github.com/${login}`,
+  });
+  return state.users[login];
+}
+
+function seedStargazers(state, repo, stargazers = []) {
+  state.stargazers ??= {};
+  const fullName = repo.full_name;
+  const logins = [];
+
+  for (const entry of stargazers) {
+    const spec = typeof entry === 'string' ? { login: entry } : entry;
+    if (!spec?.login) continue;
+    ensureUser(state, spec.login, spec);
+    logins.push(spec.login);
+  }
+
+  state.stargazers[fullName] = logins;
+  repo.stargazers_count = logins.length;
 }
 
 function parseLabels(labels) {
@@ -285,6 +349,13 @@ export const plugin = {
   register(app, store) {
     app.get('/user', (c) => c.json(currentUser()));
 
+    app.get('/users/:username', (c) => {
+      const state = githubState(store);
+      const user = state.users?.[c.req.param('username')];
+      if (!user) return c.json({ message: 'Not Found' }, 404);
+      return c.json(user);
+    });
+
     app.get('/user/orgs', (c) => c.json([]));
 
     app.get('/user/repos', (c) => {
@@ -354,6 +425,32 @@ export const plugin = {
     app.get('/repos/:owner/:repo', (c) => {
       const state = githubState(store);
       return c.json(ensureRepository(state, c.req.param('owner'), c.req.param('repo')));
+    });
+
+    app.get('/repos/:owner/:repo/stargazers', (c) => {
+      const state = githubState(store);
+      const owner = c.req.param('owner');
+      const repoName = c.req.param('repo');
+      const repo = ensureRepository(state, owner, repoName);
+      const page = Math.max(1, Number(c.req.query?.('page') ?? 1));
+      const perPage = Math.max(1, Math.min(100, Number(c.req.query?.('per_page') ?? 30)));
+      const logins = state.stargazers?.[repo.full_name] ?? [];
+      const start = (page - 1) * perPage;
+      const users = logins.slice(start, start + perPage).map((login) => ensureUser(state, login));
+      const lastPage = Math.ceil(logins.length / perPage);
+      const links = [];
+
+      if (page < lastPage) {
+        const origin = requestOrigin(c);
+        links.push(`<${origin}/repos/${repo.full_name}/stargazers?per_page=${perPage}&page=${page + 1}>; rel="next"`);
+        links.push(`<${origin}/repos/${repo.full_name}/stargazers?per_page=${perPage}&page=${lastPage}>; rel="last"`);
+      }
+
+      const response = c.json(users);
+      if (links.length > 0) {
+        response.headers?.set?.('Link', links.join(', '));
+      }
+      return response;
     });
 
     app.get('/repos/:owner/:repo/branches', (c) => {
@@ -730,11 +827,15 @@ export const plugin = {
 
 export function seedFromConfig(store, _baseUrl, config) {
   const state = githubState(store);
+  for (const user of config.users ?? []) {
+    if (user?.login) ensureUser(state, user.login, user);
+  }
   for (const spec of config.repositories ?? []) {
     const [owner, repoName] = String(spec.full_name ?? spec.fullName ?? '').split('/');
     if (!owner || !repoName) continue;
     const repo = ensureRepository(state, owner, repoName);
     seedRepository(repo, spec);
+    seedStargazers(state, repo, spec.stargazers ?? []);
   }
   saveState(store, state);
 }

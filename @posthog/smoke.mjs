@@ -51,5 +51,36 @@ const decided = await harness.call('POST', '/decide', { token: 'posthog-emulator
 assert.equal(decided.payload.featureFlags['new-flow'], 'variant-a');
 const events = await harness.call('GET', '/inspect/events');
 assert.equal(events.payload.length, 1);
+await harness.call('POST', '/capture', {
+  api_key: 'posthog-emulator-key',
+  event: 'app_opened',
+  distinct_id: 'churn-user',
+  timestamp: '2026-05-07T15:00:00.000Z',
+  properties: { $email: 'churn@example.com' },
+});
+await harness.call('POST', '/capture', {
+  api_key: 'posthog-emulator-key',
+  event: 'app_opened',
+  distinct_id: 'active-user',
+  timestamp: '2026-05-07T15:00:00.000Z',
+});
+await harness.call('POST', '/capture', {
+  api_key: 'posthog-emulator-key',
+  event: 'settings_viewed',
+  distinct_id: 'active-user',
+  timestamp: '2026-05-08T15:00:00.000Z',
+});
+const churn = await harness.call('POST', '/api/projects/:projectId/query/', {
+  query: {
+    kind: 'HogQLQuery',
+    query: `
+      WITH entry AS (SELECT distinct_id FROM events WHERE event IN ('app_opened') HAVING entry_at >= toDateTime('2026-05-07 00:00:00.000') AND entry_at < toDateTime('2026-05-08 00:00:00.000')),
+      activation AS (SELECT distinct_id FROM events)
+      SELECT entry.distinct_id FROM entry LEFT JOIN activation ON activation.distinct_id = entry.distinct_id WHERE activation.activated_at IS NULL LIMIT 10
+    `,
+  },
+}, { projectId: '123' });
+assert.equal(churn.payload.results.length, 1);
+assert.equal(churn.payload.results[0][0], 'churn-user');
 
 console.log('posthog smoke ok');

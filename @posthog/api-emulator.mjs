@@ -56,7 +56,7 @@ function normalizeEvent(body, source) {
     distinctId: body.distinct_id ?? body.distinctId ?? body.properties?.distinct_id ?? 'anonymous',
     properties: body.properties ?? {},
     source,
-    capturedAt: now(),
+    capturedAt: body.timestamp ?? body.properties?.$time ?? now(),
   };
 }
 
@@ -124,6 +124,51 @@ function evaluateFlags(next, distinctId, groups = {}) {
     featureFlagPayloads: Object.fromEntries(Object.keys(flags).map((key) => [key, next.featureFlags[key]?.payload ?? null])),
     distinctId,
   };
+}
+
+function parseEventList(query, alias) {
+  const match = query.match(new RegExp(`${alias}[\\s\\S]*?event\\s+IN\\s+\\(([^)]*)\\)`, 'i'));
+  if (!match) return [];
+  return match[1].split(',').map((value) => value.trim().replace(/^'/, '').replace(/'$/, '').replaceAll("\\'", "'")).filter(Boolean);
+}
+
+function parseWindow(query) {
+  const matches = [...query.matchAll(/toDateTime\('([^']+)'\)/g)].map((match) => new Date(`${match[1].replace(' ', 'T')}Z`));
+  return { start: matches[0], end: matches[1] };
+}
+
+function eventTime(event) {
+  const date = new Date(event.capturedAt);
+  return Number.isNaN(date.getTime()) ? new Date() : date;
+}
+
+function firstMatchingEvent(allEvents, distinctId, names, after) {
+  return allEvents
+    .filter((event) => event.distinctId === distinctId && (names.length === 0 || names.includes(event.event)) && (!after || eventTime(event) > after))
+    .sort((left, right) => eventTime(left) - eventTime(right))[0] ?? null;
+}
+
+function runChurnQuery(next, query) {
+  const entryEvents = parseEventList(query, 'entry');
+  const activationEvents = parseEventList(query, 'activation');
+  const { start, end } = parseWindow(query);
+  const limit = Number(query.match(/LIMIT\s+(\d+)/i)?.[1] ?? 100);
+  const rows = [];
+  const ids = [...new Set(next.events.map((event) => event.distinctId))];
+
+  for (const distinctId of ids) {
+    const entry = firstMatchingEvent(next.events, distinctId, entryEvents, null);
+    if (!entry) continue;
+    const entryAt = eventTime(entry);
+    if (start && entryAt < start) continue;
+    if (end && entryAt >= end) continue;
+    const activation = firstMatchingEvent(next.events, distinctId, activationEvents, entryAt);
+    if (activation) continue;
+    rows.push([distinctId, entryAt.toISOString(), entry.event, entry.properties?.$email ?? entry.properties?.email ?? null, entry.properties?.name ?? null]);
+    if (rows.length >= limit) break;
+  }
+
+  return rows;
 }
 
 export const plugin = {
@@ -249,6 +294,18 @@ export const plugin = {
       next.experiments[id] = { id, name: body.name ?? 'Emulator Experiment', feature_flag_key: body.feature_flag_key ?? null, parameters: body.parameters ?? {}, created_at: now() };
       saveState(store, next);
       return c.json(next.experiments[id], 201);
+    });
+    app.post('/api/projects/:projectId/query', async (c) => {
+      const body = await parseBody(c);
+      const query = body.query?.query ?? body.query ?? '';
+      if (typeof query !== 'string') return c.json({ type: 'validation_error', detail: 'query is required' }, 400);
+      return c.json({ results: runChurnQuery(state(store), query) });
+    });
+    app.post('/api/projects/:projectId/query/', async (c) => {
+      const body = await parseBody(c);
+      const query = body.query?.query ?? body.query ?? '';
+      if (typeof query !== 'string') return c.json({ type: 'validation_error', detail: 'query is required' }, 400);
+      return c.json({ results: runChurnQuery(state(store), query) });
     });
     app.get('/api/projects/:projectId/cohorts', (c) => c.json({ results: Object.values(state(store).cohorts) }));
     app.post('/api/projects/:projectId/cohorts', async (c) => {
