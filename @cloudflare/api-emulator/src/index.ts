@@ -89,12 +89,16 @@ type QueueMessageRecord = {
   body: unknown;
   options?: Record<string, unknown>;
   sentAt: string;
+  leaseId?: string;
+  attempts: number;
 };
 type WorkflowInstanceRecord = {
   id: string;
   params?: unknown;
   createdAt: string;
-  status: "running" | "complete" | "terminated";
+  modifiedAt: string;
+  status: "running" | "complete" | "paused" | "terminated" | "errored";
+  events: Array<{ type: string; payload: unknown; sentAt: string }>;
 };
 
 type CloudflarePlatformOptions = {
@@ -199,6 +203,8 @@ const sentEmails: SentEmailRecord[] = [];
 const queueMessages = new Map<string, QueueMessageRecord[]>();
 const workflowInstances = new Map<string, WorkflowInstanceRecord[]>();
 const analyticsEvents = new Map<string, unknown[]>();
+const d1Databases = new Map<string, MemoryD1Database>();
+const kvNamespaces = new Map<string, MemoryKVNamespace>();
 const workersAiModels = [
   {
     id: "@cf/meta/llama-4-scout-17b-16e-instruct",
@@ -500,6 +506,284 @@ function vectorizeRoutes(app: AppLike): void {
   );
 }
 
+function d1Routes(app: AppLike): void {
+  const database = (id: string) => {
+    if (!d1Databases.has(id)) d1Databases.set(id, new MemoryD1Database());
+    return d1Databases.get(id)!;
+  };
+  const serializeDatabase = (id: string) => ({
+    uuid: id,
+    name: id,
+    created_at: "2026-01-01T00:00:00.000Z",
+    version: "production",
+  });
+
+  app.get?.("/client/v4/accounts/:accountId/d1/database", (c: any) =>
+    c.json(cloudflareEnvelope(Array.from(d1Databases.keys()).map(serializeDatabase))),
+  );
+  app.post("/client/v4/accounts/:accountId/d1/database", async (c: any) => {
+    const body = await contextJson(c);
+    const id = String(body?.name ?? body?.uuid ?? crypto.randomUUID());
+    database(id);
+    return c.json(cloudflareEnvelope(serializeDatabase(id)));
+  });
+  app.get?.("/client/v4/accounts/:accountId/d1/database/:databaseId", (c: any) =>
+    c.json(cloudflareEnvelope(serializeDatabase(c.req.param("databaseId")))),
+  );
+  app.delete?.("/client/v4/accounts/:accountId/d1/database/:databaseId", (c: any) => {
+    const id = c.req.param("databaseId");
+    d1Databases.delete(id);
+    return c.json(cloudflareEnvelope({ uuid: id, deleted: true }));
+  });
+  app.post("/client/v4/accounts/:accountId/d1/database/:databaseId/query", async (c: any) => {
+    const body = await contextJson(c);
+    const statements = Array.isArray(body) ? body : [body];
+    const result = statements.map((statement) =>
+      database(c.req.param("databaseId")).execute(String(statement.sql ?? ""), statement.params ?? []),
+    );
+    return c.json(cloudflareEnvelope(result));
+  });
+  app.post("/client/v4/accounts/:accountId/d1/database/:databaseId/raw", async (c: any) => {
+    const body = await contextJson(c);
+    const statements = Array.isArray(body) ? body : [body];
+    const result = statements.map((statement) => {
+      const prepared = database(c.req.param("databaseId")).prepare(String(statement.sql ?? "")).bind(...(statement.params ?? []));
+      return prepared.raw();
+    });
+    return c.json(cloudflareEnvelope(await Promise.all(result)));
+  });
+  app.post("/client/v4/accounts/:accountId/d1/database/:databaseId/export", (c: any) =>
+    c.json(cloudflareEnvelope({
+      filename: `${c.req.param("databaseId")}.sql`,
+      sql: database(c.req.param("databaseId")).exportSql(),
+    })),
+  );
+  app.post("/client/v4/accounts/:accountId/d1/database/:databaseId/import", async (c: any) => {
+    const body = await contextJson(c);
+    await database(c.req.param("databaseId")).exec(String(body?.sql ?? ""));
+    return c.json(cloudflareEnvelope({ success: true }));
+  });
+}
+
+function kvRoutes(app: AppLike): void {
+  const namespace = (id: string) => {
+    if (!kvNamespaces.has(id)) kvNamespaces.set(id, new MemoryKVNamespace());
+    return kvNamespaces.get(id)!;
+  };
+  const serializeNamespace = (id: string) => ({ id, title: id, supports_url_encoding: true });
+
+  app.get?.("/client/v4/accounts/:accountId/storage/kv/namespaces", (c: any) =>
+    c.json(cloudflareEnvelope(Array.from(kvNamespaces.keys()).map(serializeNamespace))),
+  );
+  app.post("/client/v4/accounts/:accountId/storage/kv/namespaces", async (c: any) => {
+    const body = await contextJson(c);
+    const id = String(body?.title ?? body?.id ?? crypto.randomUUID());
+    namespace(id);
+    return c.json(cloudflareEnvelope(serializeNamespace(id)));
+  });
+  app.get?.("/client/v4/accounts/:accountId/storage/kv/namespaces/:namespaceId", (c: any) =>
+    c.json(cloudflareEnvelope(serializeNamespace(c.req.param("namespaceId")))),
+  );
+  app.put?.("/client/v4/accounts/:accountId/storage/kv/namespaces/:namespaceId", async (c: any) => {
+    const body = await contextJson(c);
+    return c.json(cloudflareEnvelope({ ...serializeNamespace(c.req.param("namespaceId")), title: body?.title ?? c.req.param("namespaceId") }));
+  });
+  app.delete?.("/client/v4/accounts/:accountId/storage/kv/namespaces/:namespaceId", (c: any) => {
+    const id = c.req.param("namespaceId");
+    kvNamespaces.delete(id);
+    return c.json(cloudflareEnvelope({ id, deleted: true }));
+  });
+  app.get?.("/client/v4/accounts/:accountId/storage/kv/namespaces/:namespaceId/keys", async (c: any) => {
+    const url = new URL(c.req.url);
+    const result = await namespace(c.req.param("namespaceId")).list({
+      prefix: url.searchParams.get("prefix") ?? undefined,
+      limit: Number(url.searchParams.get("limit") ?? 1000),
+      cursor: url.searchParams.get("cursor") ?? undefined,
+    });
+    return c.json(cloudflareEnvelope(result));
+  });
+  app.get?.("/client/v4/accounts/:accountId/storage/kv/namespaces/:namespaceId/metadata/:keyName", (c: any) =>
+    c.json(cloudflareEnvelope(namespace(c.req.param("namespaceId")).metadata(c.req.param("keyName")))),
+  );
+  app.get?.("/client/v4/accounts/:accountId/storage/kv/namespaces/:namespaceId/values/:keyName", (c: any) => {
+    const value = namespace(c.req.param("namespaceId")).rawValue(c.req.param("keyName"));
+    return new Response(value ?? "", { status: value === null ? 404 : 200 });
+  });
+  app.put?.("/client/v4/accounts/:accountId/storage/kv/namespaces/:namespaceId/values/:keyName", async (c: any) => {
+    const url = new URL(c.req.url);
+    await namespace(c.req.param("namespaceId")).put(c.req.param("keyName"), await contextText(c), {
+      expiration: numericParam(url, "expiration"),
+      expirationTtl: numericParam(url, "expiration_ttl"),
+    });
+    return c.json(cloudflareEnvelope({ key: c.req.param("keyName"), written: true }));
+  });
+  app.delete?.("/client/v4/accounts/:accountId/storage/kv/namespaces/:namespaceId/values/:keyName", async (c: any) => {
+    await namespace(c.req.param("namespaceId")).delete(c.req.param("keyName"));
+    return c.json(cloudflareEnvelope({ key: c.req.param("keyName"), deleted: true }));
+  });
+  app.put?.("/client/v4/accounts/:accountId/storage/kv/namespaces/:namespaceId/bulk", async (c: any) => {
+    await namespace(c.req.param("namespaceId")).bulkPut(await contextJson(c) as Array<{ key: string; value: unknown }>);
+    return c.json(cloudflareEnvelope({ written: true }));
+  });
+  app.post("/client/v4/accounts/:accountId/storage/kv/namespaces/:namespaceId/bulk/get", async (c: any) => {
+    const body = await contextJson(c);
+    const keys = Array.isArray(body) ? body : body?.keys ?? [];
+    const result = Object.fromEntries(await Promise.all(keys.map(async (key: string) => [key, await namespace(c.req.param("namespaceId")).get(key)])));
+    return c.json(cloudflareEnvelope(result));
+  });
+  app.delete?.("/client/v4/accounts/:accountId/storage/kv/namespaces/:namespaceId/bulk", async (c: any) => {
+    const body = await contextJson(c);
+    await namespace(c.req.param("namespaceId")).bulkDelete(Array.isArray(body) ? body : body?.keys ?? []);
+    return c.json(cloudflareEnvelope({ deleted: true }));
+  });
+  app.post("/client/v4/accounts/:accountId/storage/kv/namespaces/:namespaceId/bulk/delete", async (c: any) => {
+    const body = await contextJson(c);
+    await namespace(c.req.param("namespaceId")).bulkDelete(Array.isArray(body) ? body : body?.keys ?? []);
+    return c.json(cloudflareEnvelope({ deleted: true }));
+  });
+}
+
+function queueRoutes(app: AppLike): void {
+  const queue = (id: string) => new MemoryQueue(id);
+  const serializeQueue = (id: string) => ({ queue_id: id, queue_name: id, created_on: "2026-01-01T00:00:00.000Z" });
+
+  app.get?.("/client/v4/accounts/:accountId/queues", (c: any) =>
+    c.json(cloudflareEnvelope(Array.from(queueMessages.keys()).map(serializeQueue))),
+  );
+  app.post("/client/v4/accounts/:accountId/queues", async (c: any) => {
+    const body = await contextJson(c);
+    const id = String(body?.queue_name ?? body?.queue_id ?? crypto.randomUUID());
+    queue(id);
+    return c.json(cloudflareEnvelope(serializeQueue(id)));
+  });
+  app.get?.("/client/v4/accounts/:accountId/queues/:queueId", (c: any) =>
+    c.json(cloudflareEnvelope(serializeQueue(c.req.param("queueId")))),
+  );
+  app.delete?.("/client/v4/accounts/:accountId/queues/:queueId", (c: any) => {
+    const id = c.req.param("queueId");
+    queueMessages.delete(id);
+    return c.json(cloudflareEnvelope({ queue_id: id, deleted: true }));
+  });
+  app.post("/client/v4/accounts/:accountId/queues/:queueId/messages", async (c: any) => {
+    const body = await contextJson(c);
+    return c.json(cloudflareEnvelope(await queue(c.req.param("queueId")).send(body?.body ?? body, body?.options)));
+  });
+  app.post("/client/v4/accounts/:accountId/queues/:queueId/messages/batch", async (c: any) => {
+    const body = await contextJson(c);
+    return c.json(cloudflareEnvelope(await queue(c.req.param("queueId")).sendBatch(body?.messages ?? body ?? [])));
+  });
+  app.post("/client/v4/accounts/:accountId/queues/:queueId/messages/pull", async (c: any) => {
+    const body = await contextJson(c);
+    return c.json(cloudflareEnvelope({ messages: queue(c.req.param("queueId")).pull(Number(body?.batch_size ?? body?.max_messages ?? 1)) }));
+  });
+  app.post("/client/v4/accounts/:accountId/queues/:queueId/messages/preview", async (c: any) => {
+    const body = await contextJson(c);
+    return c.json(cloudflareEnvelope({ messages: queue(c.req.param("queueId")).messages().slice(0, Number(body?.batch_size ?? 1)) }));
+  });
+  app.post("/client/v4/accounts/:accountId/queues/:queueId/messages/ack", async (c: any) => {
+    const body = await contextJson(c);
+    const ids = body?.acks?.map((item: any) => item.lease_id ?? item.id) ?? body?.ids ?? [];
+    return c.json(cloudflareEnvelope({ acked: queue(c.req.param("queueId")).ack(ids) }));
+  });
+  app.post("/client/v4/accounts/:accountId/queues/:queueId/messages/preview/ack", async (c: any) => {
+    const body = await contextJson(c);
+    return c.json(cloudflareEnvelope({ acked: queue(c.req.param("queueId")).ack(body?.ids ?? []) }));
+  });
+  app.get?.("/client/v4/accounts/:accountId/queues/:queueId/metrics", (c: any) =>
+    c.json(cloudflareEnvelope(queue(c.req.param("queueId")).metrics())),
+  );
+  app.post("/client/v4/accounts/:accountId/queues/:queueId/purge", (c: any) =>
+    c.json(cloudflareEnvelope({ purged: queue(c.req.param("queueId")).purge() })),
+  );
+  app.get?.("/client/v4/accounts/:accountId/queues/:queueId/purge", (c: any) =>
+    c.json(cloudflareEnvelope({ completed: true, queue_id: c.req.param("queueId") })),
+  );
+}
+
+function workflowRoutes(app: AppLike): void {
+  const workflow = (name: string) => new MemoryWorkflowBinding(name);
+  const serializeWorkflow = (name: string) => ({ id: name, name, created_on: "2026-01-01T00:00:00.000Z" });
+
+  app.get?.("/client/v4/accounts/:accountId/workflows", (c: any) =>
+    c.json(cloudflareEnvelope(Array.from(workflowInstances.keys()).map(serializeWorkflow))),
+  );
+  app.get?.("/client/v4/accounts/:accountId/workflows/:workflowName", (c: any) =>
+    c.json(cloudflareEnvelope(serializeWorkflow(c.req.param("workflowName")))),
+  );
+  app.put?.("/client/v4/accounts/:accountId/workflows/:workflowName", (c: any) => {
+    workflow(c.req.param("workflowName"));
+    return c.json(cloudflareEnvelope(serializeWorkflow(c.req.param("workflowName"))));
+  });
+  app.delete?.("/client/v4/accounts/:accountId/workflows/:workflowName", (c: any) => {
+    const name = c.req.param("workflowName");
+    workflowInstances.delete(name);
+    return c.json(cloudflareEnvelope({ id: name, deleted: true }));
+  });
+  app.get?.("/client/v4/accounts/:accountId/workflows/:workflowName/instances", (c: any) =>
+    c.json(cloudflareEnvelope(workflow(c.req.param("workflowName")).list())),
+  );
+  app.post("/client/v4/accounts/:accountId/workflows/:workflowName/instances", async (c: any) => {
+    const body = await contextJson(c);
+    const instance = await workflow(c.req.param("workflowName")).create({ id: body?.id, params: body?.params });
+    return c.json(cloudflareEnvelope(await instance.status()));
+  });
+  app.post("/client/v4/accounts/:accountId/workflows/:workflowName/instances/batch", async (c: any) => {
+    const body = await contextJson(c);
+    const items = body?.instances ?? body ?? [];
+    const instances = [];
+    for (const item of items) {
+      const instance = await workflow(c.req.param("workflowName")).create({ id: item.id, params: item.params });
+      instances.push(await instance.status());
+    }
+    return c.json(cloudflareEnvelope(instances));
+  });
+  app.get?.("/client/v4/accounts/:accountId/workflows/:workflowName/instances/:instanceId", async (c: any) => {
+    const instance = await workflow(c.req.param("workflowName")).get(c.req.param("instanceId"));
+    return c.json(cloudflareEnvelope(instance ? await instance.status() : null));
+  });
+  app.patch?.("/client/v4/accounts/:accountId/workflows/:workflowName/instances/:instanceId/status", async (c: any) => {
+    const body = await contextJson(c);
+    const instance = await workflow(c.req.param("workflowName")).get(c.req.param("instanceId"));
+    if (!instance) return c.json(cloudflareEnvelope(null));
+    if (body?.status === "terminated") return c.json(cloudflareEnvelope(await instance.terminate()));
+    if (body?.status === "paused") return c.json(cloudflareEnvelope(await instance.pause()));
+    return c.json(cloudflareEnvelope(await instance.resume()));
+  });
+  app.post("/client/v4/accounts/:accountId/workflows/:workflowName/instances/:instanceId/events/:eventType", async (c: any) => {
+    const record = workflowInstances.get(c.req.param("workflowName"))?.find((item) => item.id === c.req.param("instanceId"));
+    if (record) {
+      record.events.push({ type: c.req.param("eventType"), payload: await contextJson(c), sentAt: new Date().toISOString() });
+      record.modifiedAt = new Date().toISOString();
+    }
+    return c.json(cloudflareEnvelope(record ?? null));
+  });
+  app.post("/client/v4/accounts/:accountId/workflows/:workflowName/instances/batch/terminate", async (c: any) => {
+    const body = await contextJson(c);
+    const ids = body?.ids ?? [];
+    let terminated = 0;
+    for (const id of ids) {
+      const instance = await workflow(c.req.param("workflowName")).get(id);
+      if (instance) {
+        await instance.terminate();
+        terminated++;
+      }
+    }
+    return c.json(cloudflareEnvelope({ terminated }));
+  });
+  app.get?.("/client/v4/accounts/:accountId/workflows/:workflowName/versions", (c: any) =>
+    c.json(cloudflareEnvelope([{ id: "latest", workflow_name: c.req.param("workflowName"), created_on: "2026-01-01T00:00:00.000Z" }])),
+  );
+  app.get?.("/client/v4/accounts/:accountId/workflows/:workflowName/versions/:versionId", (c: any) =>
+    c.json(cloudflareEnvelope({ id: c.req.param("versionId"), workflow_name: c.req.param("workflowName") })),
+  );
+  app.get?.("/client/v4/accounts/:accountId/workflows/:workflowName/versions/:versionId/dag", (c: any) =>
+    c.json(cloudflareEnvelope({ nodes: [], edges: [] })),
+  );
+  app.get?.("/client/v4/accounts/:accountId/workflows/:workflowName/versions/:versionId/graph", (c: any) =>
+    c.json(cloudflareEnvelope({ nodes: [], edges: [] })),
+  );
+}
+
 function cloudflareEnvelope(result: unknown) {
   return {
     success: true,
@@ -611,7 +895,7 @@ class MemoryD1Database {
   }
 
   async batch(statements: MemoryD1PreparedStatement[]) {
-    return Promise.all(statements.map((statement) => statement.run()));
+    return Promise.all(statements.map((statement) => statement.execute()));
   }
 
   select(sql: string, params: unknown[]): D1Row[] {
@@ -630,10 +914,14 @@ class MemoryD1Database {
 
   mutate(sql: string, params: unknown[]) {
     const normalized = normalizeSql(sql);
+    if (normalized.startsWith("create table")) {
+      this.addTableSchema(sql);
+      return d1Result([], 0);
+    }
     if (normalized.startsWith("insert into")) return this.insertGeneric(sql, params);
     if (normalized.startsWith("update")) return this.updateGeneric(sql, params);
     if (normalized.startsWith("delete from")) return this.deleteGeneric(sql, params);
-    if (["begin", "commit", "rollback"].includes(normalized)) return { success: true, meta: { changes: 0 }, results: [] };
+    if (["begin", "commit", "rollback"].includes(normalized)) return d1Result([], 0);
     if (normalized.startsWith("insert into sessions")) {
       const [id, problem_id, title, language, instructions, starter_files] =
         params;
@@ -647,13 +935,58 @@ class MemoryD1Database {
         created_at: new Date().toISOString(),
         is_active: 1,
       });
-      return { success: true, meta: { changes: 1 }, results: [] };
+      return d1Result([], 1);
     }
     throw new Error(`Unsupported D1 mutation: ${sql}`);
   }
 
   async exec(sql: string) {
-    return this.mutate(sql, []);
+    const statements = sql.split(";").map((statement) => statement.trim()).filter(Boolean);
+    let count = 0;
+    let duration = 0;
+    for (const statement of statements) {
+      const started = performance.now();
+      if (normalizeSql(statement).startsWith("select")) this.select(statement, []);
+      else this.mutate(statement, []);
+      duration += performance.now() - started;
+      count++;
+    }
+    return { count, duration };
+  }
+
+  async dump(): Promise<ArrayBuffer> {
+    const statements = [
+      ...this.sqliteMasterRows().map((row) => row.sql).filter(Boolean),
+      ...Array.from(this.tables.entries()).flatMap(([table, rows]) =>
+        rows.map((row) => {
+          const columns = Object.keys(row);
+          const values = columns.map((column) => sqlLiteral(row[column])).join(", ");
+          return `INSERT INTO ${table} (${columns.join(", ")}) VALUES (${values});`;
+        }),
+      ),
+    ];
+    return encoder.encode(statements.join("\n")).buffer;
+  }
+
+  withSession() {
+    return {
+      prepare: (sql: string) => this.prepare(sql),
+      batch: (statements: MemoryD1PreparedStatement[]) => this.batch(statements),
+      getBookmark: () => `bookmark-${Date.now()}`,
+    };
+  }
+
+  execute(sql: string, params: unknown[] = []) {
+    const normalized = normalizeSql(sql);
+    if (normalized.startsWith("select") || normalized.startsWith("pragma")) {
+      return d1Result(this.select(sql, params), 0);
+    }
+    return this.mutate(sql, params);
+  }
+
+  exportSql(): string {
+    const schema = this.sqliteMasterRows().map((row) => row.sql).filter(Boolean);
+    return schema.join(";\n");
   }
 
   private addTableSchema(statement: string) {
@@ -752,13 +1085,14 @@ class MemoryD1Database {
 
   private insertGeneric(sql: string, params: unknown[]) {
     const table = this.extractMutationTable(sql, "insert into");
+    this.ensureTable(table);
     const columns = [...sql.matchAll(/\(\s*([^)]+)\s*\)/g)][0]?.[1]
       .split(",")
       .map(cleanIdentifier) ?? [];
     const row = Object.fromEntries(columns.map((column, index) => [column, params[index]]));
     this.table(table).push(row);
     this.lastInserted = { table, row };
-    return { success: true, meta: { changes: 1 }, results: [] };
+    return d1Result([], 1);
   }
 
   private updateGeneric(sql: string, params: unknown[]) {
@@ -774,7 +1108,7 @@ class MemoryD1Database {
       setColumns.forEach((column, index) => row[column] = params[index]);
       changes++;
     }
-    return { success: true, meta: { changes }, results: [] };
+    return d1Result([], changes);
   }
 
   private deleteGeneric(sql: string, params: unknown[]) {
@@ -784,7 +1118,7 @@ class MemoryD1Database {
     const rows = this.table(table);
     const before = rows.length;
     this.tables.set(table, rows.filter((row) => row[where] !== params[0]));
-    return { success: true, meta: { changes: before - this.table(table).length }, results: [] };
+    return d1Result([], before - this.table(table).length);
   }
 
   private extractTable(sql: string): string {
@@ -887,6 +1221,14 @@ class MemoryD1PreparedStatement {
   async run() {
     return this.db.mutate(this.sql, this.params);
   }
+
+  async raw<T = unknown[]>(): Promise<T[]> {
+    return this.db.select(this.sql, this.params).map((row) => Object.values(row) as T);
+  }
+
+  async execute() {
+    return this.db.execute(this.sql, this.params);
+  }
 }
 
 class MemoryKVNamespace {
@@ -902,26 +1244,37 @@ class MemoryKVNamespace {
   }
 
   async get<T = string>(
-    key: string,
-    type?: "text" | "json" | "arrayBuffer" | "stream",
-  ): Promise<T | null> {
+    key: string | string[],
+    type?: "text" | "json" | "arrayBuffer" | "stream" | { type?: "text" | "json" | "arrayBuffer" | "stream"; cacheTtl?: number },
+  ): Promise<T | null | Map<string, T | null>> {
+    if (Array.isArray(key)) {
+      const values = new Map<string, T | null>();
+      for (const item of key) values.set(item, await this.get<T>(item, type) as T | null);
+      return values;
+    }
+    const valueType = typeof type === "object" ? type.type : type;
     const entry = this.values.get(key);
     if (!entry || isExpired(entry.expiration)) return null;
-    if (type === "json") return JSON.parse(entry.value) as T;
-    if (type === "arrayBuffer")
+    if (valueType === "json") return JSON.parse(entry.value) as T;
+    if (valueType === "arrayBuffer")
       return encoder.encode(entry.value).buffer as T;
-    if (type === "stream")
+    if (valueType === "stream")
       return new Response(entry.value).body as T;
     return entry.value as T;
   }
 
   async getWithMetadata<T = string>(
-    key: string,
-    type?: "text" | "json" | "arrayBuffer" | "stream",
-  ): Promise<{ value: T | null; metadata: unknown }> {
+    key: string | string[],
+    type?: "text" | "json" | "arrayBuffer" | "stream" | { type?: "text" | "json" | "arrayBuffer" | "stream"; cacheTtl?: number },
+  ): Promise<{ value: T | null; metadata: unknown } | Map<string, { value: T | null; metadata: unknown }>> {
+    if (Array.isArray(key)) {
+      const values = new Map<string, { value: T | null; metadata: unknown }>();
+      for (const item of key) values.set(item, await this.getWithMetadata<T>(item, type) as { value: T | null; metadata: unknown });
+      return values;
+    }
     const entry = this.values.get(key);
     return {
-      value: await this.get<T>(key, type),
+      value: await this.get<T>(key, type) as T | null,
       metadata: entry?.metadata ?? null,
     };
   }
@@ -945,11 +1298,37 @@ class MemoryKVNamespace {
     this.values.delete(key);
   }
 
+  async bulkPut(items: Array<{ key: string; value: unknown; metadata?: unknown; expiration?: number; expiration_ttl?: number }>) {
+    for (const item of items) {
+      await this.put(item.key, stringifyKvValue(item.value), {
+        metadata: item.metadata,
+        expiration: item.expiration,
+        expirationTtl: item.expiration_ttl,
+      });
+    }
+  }
+
+  async bulkDelete(keys: string[]) {
+    for (const key of keys) await this.delete(key);
+  }
+
+  metadata(key: string): unknown {
+    const entry = this.values.get(key);
+    if (!entry || isExpired(entry.expiration)) return null;
+    return entry.metadata ?? null;
+  }
+
+  rawValue(key: string): string | null {
+    const entry = this.values.get(key);
+    if (!entry || isExpired(entry.expiration)) return null;
+    return entry.value;
+  }
+
   async list(options?: { prefix?: string; limit?: number; cursor?: string }) {
     const keys = Array.from(this.values.entries())
       .filter(([key, entry]) => !isExpired(entry.expiration) && (!options?.prefix || key.startsWith(options.prefix)))
       .slice(0, options?.limit ?? 1000)
-      .map(([name, entry]) => ({ name, metadata: entry.metadata }));
+      .map(([name, entry]) => ({ name, metadata: entry.metadata, expiration: entry.expiration }));
     return { keys, list_complete: true, cursor: "" };
   }
 }
@@ -1064,22 +1443,64 @@ class MemoryQueue {
     if (!queueMessages.has(name)) queueMessages.set(name, []);
   }
 
-  async send(body: unknown, options?: Record<string, unknown>): Promise<void> {
+  async send(body: unknown, options?: Record<string, unknown>) {
     queueMessages.get(this.name)?.push({
       id: crypto.randomUUID(),
       body,
       options,
       sentAt: new Date().toISOString(),
+      attempts: 0,
     });
+    return { outcome: "ok", messageCount: 1 };
   }
 
   async sendBatch(
     messages: Iterable<{ body: unknown; options?: Record<string, unknown> }>,
     options?: Record<string, unknown>,
-  ): Promise<void> {
+  ) {
+    let messageCount = 0;
     for (const message of messages) {
       await this.send(message.body, message.options ?? options);
+      messageCount++;
     }
+    return { outcome: "ok", messageCount };
+  }
+
+  pull(count = 1): QueueMessageRecord[] {
+    const messages = queueMessages.get(this.name) ?? [];
+    return messages.slice(0, count).map((message) => {
+      message.attempts++;
+      message.leaseId = crypto.randomUUID();
+      return { ...message };
+    });
+  }
+
+  ack(ids: string[]): number {
+    const messages = queueMessages.get(this.name) ?? [];
+    const before = messages.length;
+    queueMessages.set(
+      this.name,
+      messages.filter((message) => !ids.includes(message.id) && !ids.includes(message.leaseId ?? "")),
+    );
+    return before - (queueMessages.get(this.name)?.length ?? 0);
+  }
+
+  purge(): number {
+    const count = queueMessages.get(this.name)?.length ?? 0;
+    this.clear();
+    return count;
+  }
+
+  metrics() {
+    const messages = queueMessages.get(this.name) ?? [];
+    return {
+      queue: this.name,
+      messagesVisible: messages.length,
+      oldestMessageAgeSec: messages.length
+        ? Math.max(0, Math.floor((Date.now() - Date.parse(messages[0].sentAt)) / 1000))
+        : 0,
+      totalAttempts: messages.reduce((sum, message) => sum + message.attempts, 0),
+    };
   }
 
   messages(): QueueMessageRecord[] {
@@ -1096,19 +1517,44 @@ class MemoryWorkflowBinding {
     if (!workflowInstances.has(name)) workflowInstances.set(name, []);
   }
 
-  async create(options: { id?: string; params?: unknown }): Promise<WorkflowInstanceRecord> {
+  async create(options: { id?: string; params?: unknown }) {
     const instance: WorkflowInstanceRecord = {
       id: options.id ?? crypto.randomUUID(),
       params: options.params,
       createdAt: new Date().toISOString(),
+      modifiedAt: new Date().toISOString(),
       status: "running",
+      events: [],
     };
     workflowInstances.get(this.name)?.push(instance);
-    return instance;
+    return this.wrap(instance);
   }
 
-  async get(id: string): Promise<WorkflowInstanceRecord | null> {
-    return workflowInstances.get(this.name)?.find((instance) => instance.id === id) ?? null;
+  async get(id: string) {
+    const instance = workflowInstances.get(this.name)?.find((item) => item.id === id);
+    return instance ? this.wrap(instance) : null;
+  }
+
+  list(): WorkflowInstanceRecord[] {
+    return [...(workflowInstances.get(this.name) ?? [])];
+  }
+
+  private wrap(instance: WorkflowInstanceRecord) {
+    const update = (status: WorkflowInstanceRecord["status"]) => {
+      instance.status = status;
+      instance.modifiedAt = new Date().toISOString();
+      return { ...instance };
+    };
+    return {
+      id: instance.id,
+      params: instance.params,
+      createdAt: instance.createdAt,
+      status: async () => ({ ...instance }),
+      pause: async () => update("paused"),
+      resume: async () => update("running"),
+      restart: async () => update("running"),
+      terminate: async () => update("terminated"),
+    };
   }
 }
 
@@ -1217,18 +1663,24 @@ function createDurableObjectNamespace(
 export function createCloudflareBindings(
   options: CloudflarePlatformOptions = {},
 ) {
+  const d1Seed = resolveD1Seed(options.d1?.seed);
   const env: Record<string, unknown> = {
     AI: createAiBinding(),
-    APP_DB: new MemoryD1Database(resolveD1Seed(options.d1?.seed)),
-    AUTH_DB: new MemoryD1Database(resolveD1Seed(options.d1?.seed)),
-    DB: new MemoryD1Database(resolveD1Seed(options.d1?.seed)),
+    APP_DB: new MemoryD1Database(d1Seed),
+    AUTH_DB: new MemoryD1Database(d1Seed),
+    DB: new MemoryD1Database(d1Seed),
     LOADER: new MemoryWorkerLoader(options.loader),
     SANDBOX: createSandboxEmulator(options.sandbox),
     TRANSACTIONAL_EMAIL: new MemorySendEmail(options.sendEmail),
   };
+  d1Databases.set("APP_DB", env.APP_DB as MemoryD1Database);
+  d1Databases.set("AUTH_DB", env.AUTH_DB as MemoryD1Database);
+  d1Databases.set("DB", env.DB as MemoryD1Database);
 
   for (const [binding, seed] of Object.entries(options.kv ?? {})) {
-    env[binding] = new MemoryKVNamespace(seed);
+    const namespace = new MemoryKVNamespace(seed);
+    env[binding] = namespace;
+    kvNamespaces.set(binding, namespace);
   }
 
   for (const queueName of options.queues ?? ["AbandonedPaywallQueue", "BackgroundJobsQueue"]) {
@@ -1338,6 +1790,27 @@ function projectRow(row: D1Row, projection: string[] | null): D1Row {
   return Object.fromEntries(projection.map((column) => [column, row[column]]));
 }
 
+function d1Result(results: D1Row[], changes: number) {
+  return {
+    success: true,
+    results,
+    meta: {
+      changes,
+      rows_read: results.length,
+      rows_written: changes,
+      duration: 0,
+      last_row_id: results.at(-1)?.id ?? null,
+    },
+  };
+}
+
+function sqlLiteral(value: unknown): string {
+  if (value === null || value === undefined) return "NULL";
+  if (typeof value === "number" || typeof value === "bigint") return String(value);
+  if (typeof value === "boolean") return value ? "1" : "0";
+  return `'${String(value).replaceAll("'", "''")}'`;
+}
+
 async function toBytes(
   value: string | ArrayBuffer | ArrayBufferView | Blob,
 ): Promise<Uint8Array> {
@@ -1385,6 +1858,22 @@ async function parseRequestBody(body: BodyInit | null | undefined): Promise<unkn
   return String(body);
 }
 
+async function contextJson(c: any): Promise<any> {
+  return c.req.json?.().catch(() => ({})) ?? {};
+}
+
+async function contextText(c: any): Promise<string> {
+  if (c.req.text) return c.req.text();
+  const body = c.req.raw?.body;
+  const parsed = await parseRequestBody(body);
+  return typeof parsed === "string" ? parsed : JSON.stringify(parsed ?? "");
+}
+
+function numericParam(url: URL, name: string): number | undefined {
+  const value = url.searchParams.get(name);
+  return value === null ? undefined : Number(value);
+}
+
 function jsonResponse(value: unknown, status = 200): Response {
   return new Response(JSON.stringify(value), {
     status,
@@ -1397,6 +1886,10 @@ export const cloudflarePlugin: ServicePlugin = {
   register(app: AppLike) {
     workersAiRoutes(app);
     vectorizeRoutes(app);
+    d1Routes(app);
+    kvRoutes(app);
+    queueRoutes(app);
+    workflowRoutes(app);
 
     app.post("/email/send", async (c: any) => {
       const input = (await c.req.json().catch(() => ({}))) as SendEmailInput;
