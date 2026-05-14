@@ -34,7 +34,23 @@ type AppLike = {
     path: string,
     handler: (context: any) => Promise<Response> | Response,
   ): void;
+  put?(
+    path: string,
+    handler: (context: any) => Promise<Response> | Response,
+  ): void;
+  patch?(
+    path: string,
+    handler: (context: any) => Promise<Response> | Response,
+  ): void;
+  delete?(
+    path: string,
+    handler: (context: any) => Promise<Response> | Response,
+  ): void;
   get?(
+    path: string,
+    handler: (context: any) => Promise<Response> | Response,
+  ): void;
+  all?(
     path: string,
     handler: (context: any) => Promise<Response> | Response,
   ): void;
@@ -482,6 +498,94 @@ function vectorizeRoutes(app: AppLike): void {
   app.get?.("/inspect/vectorize", (c: any) =>
     c.json(Object.fromEntries(Array.from(vectorizeIndexes.entries()).map(([name, index]) => [name, index.list()]))),
   );
+}
+
+function cloudflareEnvelope(result: unknown) {
+  return {
+    success: true,
+    errors: [],
+    messages: [],
+    result,
+  };
+}
+
+function routeParamValue(c: any, name: string): string | undefined {
+  return c.req.param?.(name);
+}
+
+function genericResourceId(c: any): string {
+  const path = new URL(c.req.url).pathname;
+  const parts = path.split("/").filter(Boolean);
+  return parts.at(-1) ?? "emulator-resource";
+}
+
+function genericCollectionKey(c: any): string {
+  const id = genericResourceId(c).replace(/[-_](\w)/g, (_, char) => String(char).toUpperCase());
+  if (id.endsWith("ies")) return id;
+  if (id.endsWith("s")) return id;
+  return `${id}s`;
+}
+
+function genericCloudflareResult(c: any): unknown {
+  const method = c.req.method;
+  const id = genericResourceId(c);
+  const accountId = routeParamValue(c, "accountId");
+  const zoneId = routeParamValue(c, "zoneId");
+
+  if (method === "GET") {
+    if (id === "info") {
+      return {
+        id: routeParamValue(c, "indexName") ?? "emulator-index",
+        dimensions: 8,
+        vector_count: vectorizeIndex(routeParamValue(c, "indexName") ?? "emulator-index").list().length,
+      };
+    }
+
+    const item = {
+      id: `${id}-emulator`,
+      name: id,
+      account_id: accountId,
+      zone_id: zoneId,
+      created_on: "2026-01-01T00:00:00.000Z",
+      modified_on: "2026-01-01T00:00:00.000Z",
+    };
+
+    return {
+      [genericCollectionKey(c)]: [item],
+      result_info: {
+        page: 1,
+        per_page: 1,
+        count: 1,
+        total_count: 1,
+      },
+    };
+  }
+
+  if (method === "DELETE") return { id, deleted: true };
+
+  return {
+    id: `${id}-emulator`,
+    account_id: accountId,
+    zone_id: zoneId,
+    status: method === "POST" ? "created" : "updated",
+    created_on: "2026-01-01T00:00:00.000Z",
+    modified_on: "2026-01-01T00:00:00.000Z",
+  };
+}
+
+function registerCloudflareOpenApiAdapter(app: AppLike): void {
+  const handler = (c: any) => c.json(cloudflareEnvelope(genericCloudflareResult(c)));
+
+  if (app.all) {
+    app.all("/client/v4/*", handler);
+    return;
+  }
+
+  app.get?.("/client/v4/*", handler);
+  app.post("/client/v4/*", handler);
+  app.put?.("/client/v4/*", handler);
+  app.patch?.("/client/v4/*", handler);
+  app.delete?.("/client/v4/*", handler);
 }
 
 class MemoryD1Database {
@@ -1338,13 +1442,15 @@ export const cloudflarePlugin: ServicePlugin = {
       analyticsEvents.clear();
       return c.json({ success: true });
     });
+
+    registerCloudflareOpenApiAdapter(app);
   },
 };
 
 export const plugin = cloudflarePlugin;
 export const label = "Cloudflare API emulator";
 export const endpoints =
-  "Workers AI /client/v4/accounts/:accountId/ai/models/search and /ai/run/*, Vectorize v2 /query and /upsert, Send Email /email/send, D1, KV, R2, Queues, Workflows, Loader, Analytics Engine, Sandbox, Durable Objects";
+  "Full Cloudflare OpenAPI /client/v4 generic adapter with deep Workers AI and Vectorize overrides, Send Email /email/send, D1, KV, R2, Queues, Workflows, Loader, Analytics Engine, Sandbox, Durable Objects";
 export const manifest = {
   name: "cloudflare",
   label,

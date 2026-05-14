@@ -153,7 +153,7 @@ export const contract = {
   ],
   fidelity: "stateful-core-plus-openapi-compatible-generic-fallback",
   openapiVersion: "2020-09-14_1.688.6",
-  openapiRouteCount: 340,
+  openapiRouteCount: 330,
 } as const;
 
 export const label = "Plaid API emulator";
@@ -748,6 +748,8 @@ function registerFallbackRoutes(app: AppLike, plaid: ReturnType<typeof getPlaidS
 
   app.post("*", fallback);
   app.post("/*", fallback);
+  app.get?.("*", fallback);
+  app.get?.("/*", fallback);
 }
 
 export const plugin: ServicePlugin = {

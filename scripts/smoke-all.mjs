@@ -6,6 +6,7 @@ const smokeFiles = [
   '@openai/smoke.mjs',
   '@posthog/smoke.mjs',
   '@github/smoke.mjs',
+  '@google/smoke.mjs',
   '@apple/smoke.mjs',
   '@alpaca/smoke.mjs',
   '@kalshi/smoke.mjs',
@@ -34,6 +35,33 @@ await new Promise((resolve, reject) => {
   child.on('exit', (code) => {
     if (code === 0) resolve();
     else reject(new Error('cloudflare openapi coverage failed'));
+  });
+  child.on('error', reject);
+});
+
+await new Promise((resolve, reject) => {
+  const child = spawn(process.execPath, ['scripts/check-github-openapi-coverage.mjs'], { stdio: 'inherit' });
+  child.on('exit', (code) => {
+    if (code === 0) resolve();
+    else reject(new Error('github openapi coverage failed'));
+  });
+  child.on('error', reject);
+});
+
+await new Promise((resolve, reject) => {
+  const child = spawn(process.execPath, ['scripts/check-google-workspace-coverage.mjs'], { stdio: 'inherit' });
+  child.on('exit', (code) => {
+    if (code === 0) resolve();
+    else reject(new Error('google workspace coverage failed'));
+  });
+  child.on('error', reject);
+});
+
+await new Promise((resolve, reject) => {
+  const child = spawn(process.execPath, ['scripts/check-plaid-openapi-coverage.mjs'], { stdio: 'inherit' });
+  child.on('exit', (code) => {
+    if (code === 0) resolve();
+    else reject(new Error('plaid openapi coverage failed'));
   });
   child.on('error', reject);
 });

@@ -5,6 +5,9 @@
   "type": "module",
   "scripts": {
     "contract:cloudflare": "node scripts/check-cloudflare-openapi-coverage.mjs",
+    "contract:github": "node scripts/check-github-openapi-coverage.mjs",
+    "contract:google-workspace": "node scripts/check-google-workspace-coverage.mjs",
+    "contract:plaid": "node scripts/check-plaid-openapi-coverage.mjs",
     "smoke": "node scripts/smoke-all.mjs"
   }
 }

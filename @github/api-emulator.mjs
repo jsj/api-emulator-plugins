@@ -6,8 +6,10 @@ export const contract = {
   provider: 'github',
   source: 'github/rest-api-description OpenAPI',
   docs: 'https://docs.github.com/en/rest',
-  scope: ['apps', 'repos', 'git-refs', 'contents', 'issues', 'pulls', 'actions-workflows', 'actions-runs', 'checks'],
-  fidelity: 'resource-model-subset',
+  scope: ['apps', 'users', 'orgs', 'repos', 'search', 'git-refs', 'git-trees', 'contents', 'issues', 'pulls', 'actions-workflows', 'actions-runs', 'checks'],
+  fidelity: 'stateful-core-plus-openapi-compatible-generic-fallback',
+  openapiVersion: '1.1.4',
+  openapiRouteCount: 1183,
 };
 
 function now() {
@@ -37,6 +39,7 @@ function githubState(store) {
     nextArtifactId: 1700,
     nextCheckRunId: 2000,
     nextWebhookId: 3000,
+    nextRepoId: 4000,
   };
   ensureRepository(initial, DEFAULT_OWNER, DEFAULT_REPO);
   store.setData?.('github:state', initial);
@@ -62,10 +65,13 @@ function parseLabels(labels) {
 function ensureRepository(state, owner = DEFAULT_OWNER, repo = DEFAULT_REPO) {
   const fullName = repoFullName(owner, repo);
   if (!state.repositories[fullName]) {
+    state.nextRepoId ??= 4000;
     state.repositories[fullName] = {
-      id: crypto.randomUUID(),
+      id: state.nextRepoId++,
       name: repo,
       full_name: fullName,
+      description: null,
+      stargazers_count: 0,
       owner: { login: owner, type: 'User' },
       default_branch: DEFAULT_BRANCH,
       private: false,
@@ -86,9 +92,139 @@ function ensureRepository(state, owner = DEFAULT_OWNER, repo = DEFAULT_REPO) {
       },
       created_at: now(),
       updated_at: now(),
+      pushed_at: now(),
     };
   }
   return state.repositories[fullName];
+}
+
+function currentUser() {
+  return {
+    login: DEFAULT_OWNER,
+    id: 1,
+    node_id: 'github-emulator-user-node',
+    avatar_url: 'https://avatars.githubusercontent.com/u/1?v=4',
+    gravatar_id: '',
+    url: 'https://api.github.com/user',
+    html_url: `https://github.com/${DEFAULT_OWNER}`,
+    type: 'User',
+    site_admin: false,
+    name: 'GitHub Emulator',
+  };
+}
+
+function listRepositories(state) {
+  return Object.values(state.repositories).sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+}
+
+function contentName(path) {
+  const parts = String(path ?? '').split('/').filter(Boolean);
+  return parts.at(-1) ?? '';
+}
+
+function asDirectoryEntry(repo, path) {
+  return {
+    name: contentName(path),
+    path,
+    sha: `${path || 'root'}-sha`,
+    size: 0,
+    url: `https://api.github.com/repos/${repo.full_name}/contents/${path}`,
+    html_url: `https://github.com/${repo.full_name}/tree/${repo.default_branch}/${path}`,
+    git_url: `https://api.github.com/repos/${repo.full_name}/git/trees/${path || 'root'}-sha`,
+    download_url: null,
+    type: 'dir',
+  };
+}
+
+function inferDirectoryContents(repo, directoryPath = '') {
+  const prefix = directoryPath ? `${directoryPath.replace(/\/+$/, '')}/` : '';
+  const children = new Map();
+
+  for (const [path, content] of Object.entries(repo.contents)) {
+    if (directoryPath && !path.startsWith(prefix)) continue;
+    const rest = path.slice(prefix.length);
+    if (!rest || rest === path && directoryPath) continue;
+    const [first, ...remaining] = rest.split('/');
+    const childPath = prefix + first;
+    children.set(childPath, remaining.length === 0 ? content : asDirectoryEntry(repo, childPath));
+  }
+
+  return [...children.values()].sort((a, b) => String(a.path).localeCompare(String(b.path)));
+}
+
+function treeForRepository(repo) {
+  const entries = new Map();
+  for (const [path, content] of Object.entries(repo.contents)) {
+    const parts = path.split('/').filter(Boolean);
+    for (let index = 1; index < parts.length; index++) {
+      const dir = parts.slice(0, index).join('/');
+      entries.set(dir, {
+        path: dir,
+        mode: '040000',
+        type: 'tree',
+        sha: `${dir}-tree-sha`,
+        url: `https://api.github.com/repos/${repo.full_name}/git/trees/${dir}-tree-sha`,
+      });
+    }
+    entries.set(path, {
+      path,
+      mode: content.mode ?? (content.type === 'dir' ? '040000' : '100644'),
+      type: content.type === 'dir' ? 'tree' : 'blob',
+      sha: content.sha ?? `${path}-sha`,
+      size: content.size ?? 0,
+      url: content.git_url ?? `https://api.github.com/repos/${repo.full_name}/git/blobs/${content.sha ?? `${path}-sha`}`,
+    });
+  }
+  return {
+    sha: 'github-emulator-main-sha',
+    url: `https://api.github.com/repos/${repo.full_name}/git/trees/github-emulator-main-sha`,
+    tree: [...entries.values()].sort((a, b) => a.path.localeCompare(b.path)),
+    truncated: false,
+  };
+}
+
+function normalizeSeedContent(repo, path, value) {
+  const type = value?.type ?? 'file';
+  const sha = value?.sha ?? `${path}-sha`;
+  return {
+    name: value?.name ?? contentName(path),
+    path,
+    sha,
+    type,
+    size: value?.size ?? (type === 'file' ? String(value?.content ?? '').length : 0),
+    encoding: value?.encoding,
+    content: value?.content,
+    url: value?.url ?? `https://api.github.com/repos/${repo.full_name}/contents/${path}`,
+    html_url: value?.html_url ?? `https://github.com/${repo.full_name}/blob/${repo.default_branch}/${path}`,
+    git_url: value?.git_url ?? `https://api.github.com/repos/${repo.full_name}/git/blobs/${sha}`,
+    download_url: value?.download_url ?? (type === 'file' ? `https://raw.githubusercontent.com/${repo.full_name}/${repo.default_branch}/${path}` : null),
+    target: value?.target,
+    submodule_git_url: value?.submodule_git_url,
+    mode: value?.mode,
+  };
+}
+
+function seedRepository(repo, spec = {}) {
+  repo.id = spec.id ?? repo.id;
+  repo.private = spec.private ?? repo.private;
+  repo.description = spec.description ?? repo.description;
+  repo.stargazers_count = spec.stargazers_count ?? spec.stargazersCount ?? repo.stargazers_count ?? 0;
+  repo.default_branch = spec.default_branch ?? spec.defaultBranch ?? repo.default_branch;
+  repo.updated_at = spec.updated_at ?? now();
+  repo.pushed_at = spec.pushed_at ?? spec.pushedAt ?? repo.updated_at;
+
+  for (const [path, value] of Object.entries(spec.contents ?? {})) {
+    repo.contents[path] = normalizeSeedContent(repo, path, value);
+  }
+}
+
+function genericOpenApiPayload(c) {
+  return {
+    message: 'GitHub emulator generic OpenAPI-compatible response',
+    method: c.req.method ?? 'GET',
+    path: c.req.path ?? c.req.url ?? c.req.param?.('*') ?? '/',
+    documentation_url: 'https://docs.github.com/en/rest',
+  };
 }
 
 function workflowRunFromDispatch(state, dispatch) {
@@ -147,6 +283,27 @@ function issueResource(owner, repo, number, body) {
 export const plugin = {
   name: 'github',
   register(app, store) {
+    app.get('/user', (c) => c.json(currentUser()));
+
+    app.get('/user/orgs', (c) => c.json([]));
+
+    app.get('/user/repos', (c) => {
+      const state = githubState(store);
+      const limit = Number(c.req.query?.('per_page') ?? 100);
+      const repos = listRepositories(state);
+      return c.json(repos.slice(0, Number.isFinite(limit) ? limit : 100));
+    });
+
+    app.get('/search/repositories', (c) => {
+      const state = githubState(store);
+      const query = String(c.req.query?.('q') ?? '').toLowerCase();
+      const repos = listRepositories(state).filter((repo) => {
+        if (!query) return true;
+        return repo.full_name.toLowerCase().includes(query) || repo.name.toLowerCase().includes(query);
+      });
+      return c.json({ total_count: repos.length, incomplete_results: false, items: repos });
+    });
+
     app.post('/app/installations/:installationId/access_tokens', (c) => {
       const state = githubState(store);
       const installationId = c.req.param('installationId');
@@ -255,8 +412,30 @@ export const plugin = {
       const repo = ensureRepository(state, c.req.param('owner'), c.req.param('repo'));
       const path = c.req.param('path');
       const content = repo.contents[path];
-      if (!content) return c.json({ message: 'Not Found' }, 404);
+      if (!content) {
+        const directory = inferDirectoryContents(repo, path);
+        if (directory.length > 0) return c.json(directory);
+        return c.json({ message: 'Not Found' }, 404);
+      }
       return c.json(content);
+    });
+
+    app.get('/repos/:owner/:repo/contents', (c) => {
+      const state = githubState(store);
+      const repo = ensureRepository(state, c.req.param('owner'), c.req.param('repo'));
+      return c.json(inferDirectoryContents(repo, ''));
+    });
+
+    app.get('/repos/:owner/:repo/git/trees/:treeSha', (c) => {
+      const state = githubState(store);
+      const repo = ensureRepository(state, c.req.param('owner'), c.req.param('repo'));
+      return c.json(treeForRepository(repo));
+    });
+
+    app.get('/repos/:owner/:repo/git/trees/:treeSha{.*}', (c) => {
+      const state = githubState(store);
+      const repo = ensureRepository(state, c.req.param('owner'), c.req.param('repo'));
+      return c.json(treeForRepository(repo));
     });
 
     app.put('/repos/:owner/:repo/contents/:path{.*}', async (c) => {
@@ -269,10 +448,14 @@ export const plugin = {
         name: path.split('/').at(-1),
         path,
         sha,
+        type: 'file',
         size: String(body.content ?? '').length,
         encoding: 'base64',
         content: body.content ?? '',
+        url: `https://api.github.com/repos/${repo.full_name}/contents/${path}`,
         html_url: `https://github.com/${repo.full_name}/blob/${body.branch ?? repo.default_branch}/${path}`,
+        git_url: `https://api.github.com/repos/${repo.full_name}/git/blobs/${sha}`,
+        download_url: `https://raw.githubusercontent.com/${repo.full_name}/${body.branch ?? repo.default_branch}/${path}`,
       };
       repo.contents[path] = content;
       repo.updated_at = now();
@@ -530,11 +713,34 @@ export const plugin = {
       githubState(store);
       return c.json({ ok: true });
     });
+
+    const fallback = (c) => c.json(genericOpenApiPayload(c));
+    app.get('*', fallback);
+    app.get('/*', fallback);
+    app.post('*', fallback);
+    app.post('/*', fallback);
+    app.put?.('*', fallback);
+    app.put?.('/*', fallback);
+    app.patch?.('*', fallback);
+    app.patch?.('/*', fallback);
+    app.delete?.('*', fallback);
+    app.delete?.('/*', fallback);
   },
 };
 
+export function seedFromConfig(store, _baseUrl, config) {
+  const state = githubState(store);
+  for (const spec of config.repositories ?? []) {
+    const [owner, repoName] = String(spec.full_name ?? spec.fullName ?? '').split('/');
+    if (!owner || !repoName) continue;
+    const repo = ensureRepository(state, owner, repoName);
+    seedRepository(repo, spec);
+  }
+  saveState(store, state);
+}
+
 export const label = 'GitHub API emulator';
-export const endpoints = 'installation access tokens, repositories, refs, contents, issues, pulls, workflow dispatches/runs, check runs';
+export const endpoints = 'user, orgs, search, repositories, refs, trees, contents, issues, pulls, workflow dispatches/runs, check runs, and generic GitHub OpenAPI fallback';
 export const capabilities = contract.scope;
 export const initConfig = {
   github: {

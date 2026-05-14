@@ -54,6 +54,30 @@ async function loadOpenApi() {
   return response.text();
 }
 
+function parseOpenApiOperations(openapi) {
+  const operations = [];
+  let currentPath = null;
+
+  for (const line of openapi.split('\n')) {
+    const pathMatch = line.match(/^    (\/[^:]+):$/);
+    if (pathMatch) {
+      currentPath = pathMatch[1];
+      continue;
+    }
+
+    const methodMatch = line.match(/^        (get|post|put|patch|delete|head|options):$/);
+    if (currentPath && methodMatch) {
+      operations.push({
+        method: methodMatch[1],
+        openapiPath: currentPath,
+        emulatorPath: `/client/v4${currentPath}`,
+      });
+    }
+  }
+
+  return operations;
+}
+
 function hasOpenApiOperation(openapi, operation) {
   const pathIndex = openapi.indexOf(`    ${operation.openapiPath}:`);
   if (pathIndex < 0) return false;
@@ -68,6 +92,27 @@ const [openapi, pluginSource] = await Promise.all([
 ]);
 
 const failures = [];
+const operations = parseOpenApiOperations(openapi);
+const openApiAdapterPresent =
+  pluginSource.includes('function registerCloudflareOpenApiAdapter') &&
+  pluginSource.includes('"/client/v4/*"') &&
+  pluginSource.includes('cloudflareEnvelope');
+
+if (operations.length < 1000) {
+  failures.push(`full Cloudflare OpenAPI parse found too few operations: ${operations.length}`);
+}
+
+if (!openApiAdapterPresent) {
+  failures.push('missing generic /client/v4/* Cloudflare OpenAPI Adapter');
+}
+
+const uncoveredOperations = openApiAdapterPresent
+  ? []
+  : operations.filter((operation) => !pluginSource.includes(operation.emulatorPath));
+
+for (const operation of uncoveredOperations.slice(0, 20)) {
+  failures.push(`uncovered OpenAPI operation: ${operation.method.toUpperCase()} ${operation.openapiPath}`);
+}
 
 for (const operation of requiredOperations) {
   if (!hasOpenApiOperation(openapi, operation)) {
@@ -84,4 +129,4 @@ if (failures.length > 0) {
   process.exit(1);
 }
 
-console.log(`cloudflare openapi coverage ok (${requiredOperations.length} operations)`);
+console.log(`cloudflare openapi coverage ok (${operations.length} operations, ${requiredOperations.length} deep overrides)`);

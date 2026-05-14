@@ -68,7 +68,7 @@ function createHarness() {
 
 const harness = createHarness();
 assert.equal(contract.provider, 'plaid');
-assert.equal(contract.openapiRouteCount, 340);
+assert.equal(contract.openapiRouteCount, 330);
 
 const link = await harness.call('POST', '/link/token/create', {
   client_name: 'Smoke App',
@@ -100,5 +100,7 @@ assert.ok(institutions.payload.institutions.length >= 1);
 
 const generic = await harness.call('POST', '/asset_report/create', {});
 assert.equal(generic.payload.status, 'created');
+const fdx = await harness.call('GET', '/fdx/recipients', {});
+assert.equal(fdx.payload.status, 'ok');
 
 console.log('plaid smoke ok');
