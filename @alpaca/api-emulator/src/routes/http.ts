@@ -388,7 +388,7 @@ function barPayload(bar: AlpacaBar) {
 }
 
 function tradePayload(symbol: string, bar: AlpacaBar) {
-  return { t: bar.timestamp, p: bar.close, s: 100, x: 'V', c: ['@'], i: `${symbol}-${bar.timestamp}`, z: 'C' };
+  return { t: bar.timestamp, p: bar.close, s: 100, x: 'V', c: ['@'], i: 1, z: 'C' };
 }
 
 function quotePayload(bar: AlpacaBar) {
@@ -508,7 +508,28 @@ function orderbookPayload(bar: AlpacaBar) {
 
 function optionSnapshot(symbol: string, bars: AlpacaBar[]) {
   const bar = latestBar('SPY', bars);
-  return { latestTrade: tradePayload(symbol, bar), latestQuote: quotePayload(bar), impliedVolatility: 0.2, greeks: { delta: 0.5, gamma: 0.01, theta: -0.01, vega: 0.1, rho: 0.01 } };
+  return { latestTrade: optionTradePayload(symbol, bar), latestQuote: optionQuotePayload(bar), impliedVolatility: 0.2, greeks: { delta: 0.5, gamma: 0.01, theta: -0.01, vega: 0.1, rho: 0.01 } };
+}
+
+function cryptoTradePayload(bar: AlpacaBar) {
+  return { t: bar.timestamp, p: bar.close, s: 100, i: 1, tks: 'B' };
+}
+
+function cryptoQuotePayload(bar: AlpacaBar) {
+  return { t: bar.timestamp, ap: bar.close + 0.01, as: 100, bp: bar.close - 0.01, bs: 200 };
+}
+
+function cryptoSnapshotPayload(symbol: string, bars: AlpacaBar[]) {
+  const bar = latestBar(symbol, bars);
+  return { latestTrade: cryptoTradePayload(bar), latestQuote: cryptoQuotePayload(bar), minuteBar: barPayload(bar), dailyBar: barPayload(bar), prevDailyBar: barPayload(bar) };
+}
+
+function optionTradePayload(symbol: string, bar: AlpacaBar) {
+  return { t: bar.timestamp, p: bar.close, s: 100, x: 'V', c: '@' };
+}
+
+function optionQuotePayload(bar: AlpacaBar) {
+  return { t: bar.timestamp, ap: bar.close + 0.01, as: 100, bp: bar.close - 0.01, bs: 200, ax: 'V', bx: 'V', c: 'R' };
 }
 
 function sseResponse(event: string) {
@@ -526,6 +547,40 @@ async function jsonBody(context: ContextLike): Promise<Record<string, unknown>> 
   }
 }
 
+function accountPayload(account: AlpacaAccount | undefined): Record<string, unknown> {
+  if (!account) return {};
+  return {
+    ...account,
+    id: String(account.account_number ?? account.id),
+    created_at: account.created_at_alpaca,
+  };
+}
+
+function orderPayload(order: AlpacaOrder): Record<string, unknown> {
+  return {
+    ...order,
+    id: String(order.order_id),
+    created_at: order.submitted_at_alpaca,
+    submitted_at: order.submitted_at_alpaca,
+  };
+}
+
+function walletPayload(id = 'wallet-transfer-1') {
+  return { id, asset: 'USDC', address: '0x0000000000000000000000000000000000000000', chain: 'ethereum', created_at: new Date().toISOString(), status: 'COMPLETE', amount: '1', direction: 'OUTGOING', to_address: '0x0000000000000000000000000000000000000000', from_address: '0x1111111111111111111111111111111111111111', network_fee: '0.01', fees: '0.01', usd_value: '1.00' };
+}
+
+function whitelistedAddress(id = 'whitelist-1') {
+  return { id, asset: 'USDC', address: '0x0000000000000000000000000000000000000000', chain: 'ethereum', created_at: new Date().toISOString(), status: 'ACTIVE' };
+}
+
+function stockAuctionPayload(bar: AlpacaBar) {
+  return { d: bar.timestamp.slice(0, 10), o: [{ t: bar.timestamp, p: bar.open, s: 100, x: 'V', c: '@' }], c: [{ t: bar.timestamp, p: bar.close, s: 100, x: 'V', c: '@' }] };
+}
+
+function marketClock() {
+  return { market: { name: 'US Equities', acronym: 'US', mic: 'XNAS', timezone: 'America/New_York' }, timestamp: new Date().toISOString(), is_market_day: true, phase: 'open', phase_until: new Date().toISOString(), next_market_open: new Date().toISOString(), next_market_close: new Date().toISOString() };
+}
+
 export function registerRoutes(app: AppLike, store: StoreLike): void {
   const alpaca = getAlpacaStore(store);
 
@@ -536,26 +591,29 @@ export function registerRoutes(app: AppLike, store: StoreLike): void {
     await next();
   });
 
-  app.get('/v2/account', (context: ContextLike) => context.json(alpaca.accounts.all()[0] ?? {}, 200));
+  app.get('/v2/account', (context: ContextLike) => context.json(accountPayload(alpaca.accounts.all()[0]), 200));
+  app.get('/v2/account/activities', (context: ContextLike) => context.json([{ id: 'activity-1', activity_type: 'FILL', transaction_time: new Date().toISOString(), type: 'fill', symbol: 'SPY', qty: '1', price: '586.5', side: 'buy' }], 200));
+  app.get('/v2/account/activities/:activityType', (context: ContextLike) => context.json([{ id: 'activity-1', activity_type: context.req.param('activityType'), transaction_time: new Date().toISOString(), symbol: 'SPY', qty: '1', price: '586.5', side: 'buy' }], 200));
   app.get('/v2/clock', (context: ContextLike) => context.json(alpaca.clocks.all()[0] ?? {}, 200));
   app.get('/v2/positions', (context: ContextLike) => context.json(alpaca.positions.all(), 200));
   app.get('/v2/positions/:symbol', (context: ContextLike) => {
     const position = alpaca.positions.findOneBy('symbol', context.req.param('symbol'));
     return position ? context.json(position, 200) : context.json({ message: 'position not found' }, 404);
   });
-  app.get('/v2/orders', (context: ContextLike) => context.json(alpaca.orders.all(), 200));
+  app.get('/v2/orders', (context: ContextLike) => context.json(alpaca.orders.all().map(orderPayload), 200));
   app.get('/v2/orders:by_client_order_id', (context: ContextLike) => {
     const clientOrderId = context.req.query('client_order_id') ?? '';
     const order = alpaca.orders.all().find((item) => item.client_order_id === clientOrderId);
-    return order ? context.json(order, 200) : context.json({ message: 'order not found' }, 404);
+    return order ? context.json(orderPayload(order), 200) : context.json({ message: 'order not found' }, 404);
   });
   app.get('/v2/orders/:orderId', (context: ContextLike) => {
     const order = alpaca.orders.findOneBy('order_id', context.req.param('orderId'));
-    return order ? context.json(order, 200) : context.json({ message: 'order not found' }, 404);
+    return order ? context.json(orderPayload(order), 200) : context.json({ message: 'order not found' }, 404);
   });
   app.delete('/v2/orders', (context: ContextLike) => {
+    const canceled = alpaca.orders.all().map((order: AlpacaOrder) => ({ id: order.order_id, status: 200 }));
     alpaca.orders.clear();
-    return context.json([], 200);
+    return context.json(canceled, 200);
   });
   app.delete('/v2/orders/:orderId', (context: ContextLike) => {
     const order = alpaca.orders.findOneBy('order_id', context.req.param('orderId'));
@@ -568,7 +626,7 @@ export function registerRoutes(app: AppLike, store: StoreLike): void {
     if (!order) return context.json({ message: 'order not found' }, 404);
     const body = await jsonBody(context);
     const updated = alpaca.orders.update(order.id, { ...body, status: 'replaced' } as Partial<AlpacaOrder>);
-    return context.json(updated, 200);
+    return context.json(updated ? orderPayload(updated) : {}, 200);
   });
   app.post('/v2/orders', async (context: ContextLike) => {
     const body = await context.req.json();
@@ -585,11 +643,14 @@ export function registerRoutes(app: AppLike, store: StoreLike): void {
       filled_at: new Date().toISOString(),
       filled_qty: String(body.qty ?? '1'),
     });
-    return context.json(order, 200);
+    return context.json(orderPayload(order), 200);
   });
 
   app.delete('/v2/positions', (context: ContextLike) => {
-    const responses = alpaca.positions.all().map((position) => ({ symbol: position.symbol, status: 200, body: { order_id: crypto.randomUUID() } }));
+    const responses = alpaca.positions.all().map((position) => {
+      const order = alpaca.orders.insert({ order_id: crypto.randomUUID(), client_order_id: crypto.randomUUID(), symbol: position.symbol, qty: position.qty, side: position.side === 'long' ? 'sell' : 'buy', type: 'market', time_in_force: 'day', status: 'filled', submitted_at_alpaca: new Date().toISOString(), filled_at: new Date().toISOString(), filled_qty: position.qty });
+      return { symbol: position.symbol, status: 200, body: orderPayload(order) };
+    });
     alpaca.positions.clear();
     return context.json(responses, 200);
   });
@@ -610,18 +671,25 @@ export function registerRoutes(app: AppLike, store: StoreLike): void {
       filled_at: new Date().toISOString(),
       filled_qty: position.qty,
     });
-    return context.json(order, 200);
+    return context.json(orderPayload(order), 200);
   });
   app.post('/v2/positions/:symbol/exercise', (context: ContextLike) => context.json({}, 204));
+  app.post('/v2/positions/:symbol/do-not-exercise', (context: ContextLike) => context.json({}, 204));
 
   app.get('/v2/account/portfolio/history', (context: ContextLike) => context.json(portfolioHistory(), 200));
   app.get('/v2/account/configurations', (context: ContextLike) => context.json(accountConfiguration(), 200));
   app.patch?.('/v2/account/configurations', async (context: ContextLike) => context.json({ ...accountConfiguration(), ...(await jsonBody(context)) }, 200));
   app.get('/v2/calendar', (context: ContextLike) => context.json([calendarDay()], 200));
   app.get('/v2/assets', (context: ContextLike) => context.json(symbolsFromQuery(context).map(alpacaAsset), 200));
+  app.get('/v2/assets/fixed_income/us_corporates', (context: ContextLike) => context.json({ us_corporates: [{ cusip: '123456789', isin: 'US1234567890', ticker: 'CORP', description: 'Emulator Corporate Bond', bond_status: 'active', coupon: 5, coupon_frequency: 'semi_annual', coupon_type: 'fixed', callable: false, convertible: false, country_domicile: 'US', dated_date: '2025-01-01', issue_date: '2025-01-01', maturity_date: '2030-01-01', min_order_size: 1, min_size_increment: 1, price_multiplier: 1, tradable: true }] }, 200));
+  app.get('/v2/assets/fixed_income/us_treasuries', (context: ContextLike) => context.json({ us_treasuries: [{ cusip: '9128285M8', isin: 'US9128285M81', description: 'Emulator Treasury', description_short: 'T-Bond', bond_status: 'active', coupon: 4, coupon_frequency: 'semi_annual', coupon_type: 'fixed', issue_date: '2025-01-01', maturity_date: '2030-01-01', subtype: 'treasury', tradable: true }] }, 200));
   app.get('/v2/assets/:symbol', (context: ContextLike) => context.json(alpacaAsset(context.req.param('symbol')), 200));
 
   app.get('/v2/watchlists', (context: ContextLike) => context.json([watchlist()], 200));
+  app.get('/v2/watchlists:by_name', (context: ContextLike) => context.json(watchlist('watchlist-1', context.req.query('name') ?? 'Default'), 200));
+  app.post('/v2/watchlists:by_name', async (context: ContextLike) => context.json({ ...watchlist('watchlist-1', context.req.query('name') ?? 'Default'), assets: [alpacaAsset(String((await jsonBody(context)).symbol ?? 'SPY'))] }, 200));
+  app.put?.('/v2/watchlists:by_name', async (context: ContextLike) => context.json(watchlist('watchlist-1', String((await jsonBody(context)).name ?? context.req.query('name') ?? 'Default')), 200));
+  app.delete('/v2/watchlists:by_name', (context: ContextLike) => context.json({}, 204));
   app.get('/v2/watchlists/:watchlistId', (context: ContextLike) => context.json(watchlist(context.req.param('watchlistId')), 200));
   app.post('/v2/watchlists', async (context: ContextLike) => {
     const body = await jsonBody(context);
@@ -688,6 +756,34 @@ export function registerRoutes(app: AppLike, store: StoreLike): void {
     return context.json({ bars }, 200);
   });
   app.get('/v2/stocks/snapshots', (context: ContextLike) => context.json(symbolMap(symbolsFromQuery(context), (symbol) => snapshotPayload(symbol, alpaca.bars.all())), 200));
+  app.get('/v2/stocks/auctions', (context: ContextLike) => context.json({ auctions: symbolMap(symbolsFromQuery(context), (symbol) => [stockAuctionPayload(latestBar(symbol, alpaca.bars.all()))]), next_page_token: null }, 200));
+  app.get('/v2/stocks/meta/exchanges', (context: ContextLike) => context.json({ V: 'IEX' }, 200));
+  app.get('/v2/stocks/meta/conditions/:ticktype', (context: ContextLike) => context.json({ '@': 'Regular Sale', R: 'Regular Quote' }, 200));
+
+  app.get('/v2/stocks/:symbol/trades/latest', (context: ContextLike) => {
+    const symbol = context.req.param('symbol');
+    return context.json({ symbol, trade: tradePayload(symbol, latestBar(symbol, alpaca.bars.all())) }, 200);
+  });
+  app.get('/v2/stocks/:symbol/quotes/latest', (context: ContextLike) => {
+    const symbol = context.req.param('symbol');
+    return context.json({ symbol, quote: quotePayload(latestBar(symbol, alpaca.bars.all())) }, 200);
+  });
+  app.get('/v2/stocks/:symbol/bars/latest', (context: ContextLike) => {
+    const symbol = context.req.param('symbol');
+    return context.json({ symbol, bar: barPayload(latestBar(symbol, alpaca.bars.all())) }, 200);
+  });
+  app.get('/v2/stocks/:symbol/quotes', (context: ContextLike) => {
+    const symbol = context.req.param('symbol');
+    return context.json({ symbol, quotes: [quotePayload(latestBar(symbol, alpaca.bars.all()))], next_page_token: null }, 200);
+  });
+  app.get('/v2/stocks/:symbol/trades', (context: ContextLike) => {
+    const symbol = context.req.param('symbol');
+    return context.json({ symbol, trades: [tradePayload(symbol, latestBar(symbol, alpaca.bars.all()))], next_page_token: null }, 200);
+  });
+  app.get('/v2/stocks/:symbol/auctions', (context: ContextLike) => {
+    const symbol = context.req.param('symbol');
+    return context.json({ symbol, auctions: [stockAuctionPayload(latestBar(symbol, alpaca.bars.all()))], next_page_token: null }, 200);
+  });
 
   app.get('/v2/stocks/:symbol/bars', (context: ContextLike) => {
     const symbol = context.req.param('symbol');
@@ -717,34 +813,44 @@ export function registerRoutes(app: AppLike, store: StoreLike): void {
     return context.json({ bars, next_page_token: null }, 200);
   });
   app.get('/v1beta3/crypto/:feed/quotes', (context: ContextLike) => {
-    const quotes = symbolMap(symbolsFromQuery(context, 'BTC/USD'), (symbol) => [quotePayload(latestBar(symbol, alpaca.bars.all()))]);
+    const quotes = symbolMap(symbolsFromQuery(context, 'BTC/USD'), (symbol) => [cryptoQuotePayload(latestBar(symbol, alpaca.bars.all()))]);
     return context.json({ quotes, next_page_token: null }, 200);
   });
   app.get('/v1beta3/crypto/:feed/trades', (context: ContextLike) => {
-    const trades = symbolMap(symbolsFromQuery(context, 'BTC/USD'), (symbol) => [tradePayload(symbol, latestBar(symbol, alpaca.bars.all()))]);
+    const trades = symbolMap(symbolsFromQuery(context, 'BTC/USD'), (symbol) => [cryptoTradePayload(latestBar(symbol, alpaca.bars.all()))]);
     return context.json({ trades, next_page_token: null }, 200);
   });
-  app.get('/v1beta3/crypto/:feed/latest/trades', (context: ContextLike) => context.json({ trades: symbolMap(symbolsFromQuery(context, 'BTC/USD'), (symbol) => tradePayload(symbol, latestBar(symbol, alpaca.bars.all()))) }, 200));
-  app.get('/v1beta3/crypto/:feed/latest/quotes', (context: ContextLike) => context.json({ quotes: symbolMap(symbolsFromQuery(context, 'BTC/USD'), (symbol) => quotePayload(latestBar(symbol, alpaca.bars.all()))) }, 200));
+  app.get('/v1beta3/crypto/:feed/latest/trades', (context: ContextLike) => context.json({ trades: symbolMap(symbolsFromQuery(context, 'BTC/USD'), (symbol) => cryptoTradePayload(latestBar(symbol, alpaca.bars.all()))) }, 200));
+  app.get('/v1beta3/crypto/:feed/latest/quotes', (context: ContextLike) => context.json({ quotes: symbolMap(symbolsFromQuery(context, 'BTC/USD'), (symbol) => cryptoQuotePayload(latestBar(symbol, alpaca.bars.all()))) }, 200));
   app.get('/v1beta3/crypto/:feed/latest/bars', (context: ContextLike) => context.json({ bars: symbolMap(symbolsFromQuery(context, 'BTC/USD'), (symbol) => barPayload(latestBar(symbol, alpaca.bars.all()))) }, 200));
   app.get('/v1beta3/crypto/:feed/latest/orderbooks', (context: ContextLike) => context.json({ orderbooks: symbolMap(symbolsFromQuery(context, 'BTC/USD'), (symbol) => orderbookPayload(latestBar(symbol, alpaca.bars.all()))) }, 200));
-  app.get('/v1beta3/crypto/:feed/snapshots', (context: ContextLike) => context.json({ snapshots: symbolMap(symbolsFromQuery(context, 'BTC/USD'), (symbol) => snapshotPayload(symbol, alpaca.bars.all())) }, 200));
+  app.get('/v1beta3/crypto/:feed/snapshots', (context: ContextLike) => context.json({ snapshots: symbolMap(symbolsFromQuery(context, 'BTC/USD'), (symbol) => cryptoSnapshotPayload(symbol, alpaca.bars.all())) }, 200));
+  app.get('/v1beta1/crypto-perps/:feed/latest/bars', (context: ContextLike) => context.json({ bars: symbolMap(symbolsFromQuery(context, 'BTC/USD'), (symbol) => barPayload(latestBar(symbol, alpaca.bars.all()))) }, 200));
+  app.get('/v1beta1/crypto-perps/:feed/latest/quotes', (context: ContextLike) => context.json({ quotes: symbolMap(symbolsFromQuery(context, 'BTC/USD'), (symbol) => cryptoQuotePayload(latestBar(symbol, alpaca.bars.all()))) }, 200));
+  app.get('/v1beta1/crypto-perps/:feed/latest/trades', (context: ContextLike) => context.json({ trades: symbolMap(symbolsFromQuery(context, 'BTC/USD'), (symbol) => cryptoTradePayload(latestBar(symbol, alpaca.bars.all()))) }, 200));
+  app.get('/v1beta1/crypto-perps/:feed/latest/orderbooks', (context: ContextLike) => context.json({ orderbooks: symbolMap(symbolsFromQuery(context, 'BTC/USD'), (symbol) => orderbookPayload(latestBar(symbol, alpaca.bars.all()))) }, 200));
+  app.get('/v1beta1/crypto-perps/:feed/latest/pricing', (context: ContextLike) => context.json({ pricing: symbolMap(symbolsFromQuery(context, 'BTC/USD'), () => ({ t: new Date().toISOString(), mp: 100000, ip: 100000, fr: 0.0001, ft: new Date().toISOString(), oi: 1000 })) }, 200));
+  app.get('/v1beta1/fixed_income/latest/prices', (context: ContextLike) => context.json({ prices: { '9128285M8': { t: new Date().toISOString(), p: 100, ytm: 4, ytw: 4 } } }, 200));
+  app.get('/v1beta1/forex/latest/rates', (context: ContextLike) => context.json({ rates: { 'EUR/USD': { t: new Date().toISOString(), ap: 1.1, bp: 1.09, mp: 1.095 } } }, 200));
+  app.get('/v1beta1/forex/rates', (context: ContextLike) => context.json({ rates: { 'EUR/USD': [{ t: new Date().toISOString(), ap: 1.1, bp: 1.09, mp: 1.095 }] }, next_page_token: null }, 200));
+  app.get('/v1beta1/logos/:symbol', (context: ContextLike) => context.json({ symbol: context.req.param('symbol'), url: 'https://example.com/logo.png' }, 200));
 
   app.get('/v1beta1/options/bars', (context: ContextLike) => context.json({ bars: symbolMap(symbolsFromQuery(context, 'SPY260116C00600000'), (symbol) => [barPayload(latestBar('SPY', alpaca.bars.all()))]), next_page_token: null }, 200));
   app.get('/v1beta1/options/meta/exchanges', (context: ContextLike) => context.json({ A: 'NYSE American Options', C: 'Cboe Options' }, 200));
-  app.get('/v1beta1/options/quotes/latest', (context: ContextLike) => context.json({ quotes: symbolMap(symbolsFromQuery(context, 'SPY260116C00600000'), () => quotePayload(latestBar('SPY', alpaca.bars.all()))) }, 200));
-  app.get('/v1beta1/options/trades/latest', (context: ContextLike) => context.json({ trades: symbolMap(symbolsFromQuery(context, 'SPY260116C00600000'), (symbol) => tradePayload(symbol, latestBar('SPY', alpaca.bars.all()))) }, 200));
-  app.get('/v1beta1/options/trades', (context: ContextLike) => context.json({ trades: symbolMap(symbolsFromQuery(context, 'SPY260116C00600000'), (symbol) => [tradePayload(symbol, latestBar('SPY', alpaca.bars.all()))]), next_page_token: null }, 200));
+  app.get('/v1beta1/options/meta/conditions/:ticktype', (context: ContextLike) => context.json({ '@': 'Regular Sale', R: 'Regular Quote' }, 200));
+  app.get('/v1beta1/options/quotes/latest', (context: ContextLike) => context.json({ quotes: symbolMap(symbolsFromQuery(context, 'SPY260116C00600000'), () => optionQuotePayload(latestBar('SPY', alpaca.bars.all()))) }, 200));
+  app.get('/v1beta1/options/trades/latest', (context: ContextLike) => context.json({ trades: symbolMap(symbolsFromQuery(context, 'SPY260116C00600000'), (symbol) => optionTradePayload(symbol, latestBar('SPY', alpaca.bars.all()))) }, 200));
+  app.get('/v1beta1/options/trades', (context: ContextLike) => context.json({ trades: symbolMap(symbolsFromQuery(context, 'SPY260116C00600000'), (symbol) => [optionTradePayload(symbol, latestBar('SPY', alpaca.bars.all()))]), next_page_token: null }, 200));
   app.get('/v1beta1/options/snapshots', (context: ContextLike) => context.json({ snapshots: symbolMap(symbolsFromQuery(context, 'SPY260116C00600000'), (symbol) => optionSnapshot(symbol, alpaca.bars.all())), next_page_token: null }, 200));
   app.get('/v1beta1/options/snapshots/:underlyingSymbol', (context: ContextLike) => {
     const symbol = `${context.req.param('underlyingSymbol')}260116C00600000`;
     return context.json({ snapshots: { [symbol]: optionSnapshot(symbol, alpaca.bars.all()) }, next_page_token: null }, 200);
   });
   app.get('/v1beta1/news', (context: ContextLike) => context.json({ news: [newsItem()], next_page_token: null }, 200));
-  app.get('/v1beta1/corporate-actions', (context: ContextLike) => context.json({ corporate_actions: [corporateAction()], next_page_token: null }, 200));
-  app.get('/v1beta1/screener/stocks/most-actives', (context: ContextLike) => context.json({ most_actives: [{ symbol: 'SPY', volume: 1000000, trade_count: 1000 }] }, 200));
-  app.get('/v1beta1/screener/stocks/movers', (context: ContextLike) => context.json({ gainers: [{ symbol: 'SPY', change: 1, percent_change: 0.1 }], losers: [] }, 200));
-  app.get('/v1beta1/screener/crypto/movers', (context: ContextLike) => context.json({ gainers: [{ symbol: 'BTC/USD', change: 1, percent_change: 0.1 }], losers: [] }, 200));
+  app.get('/v1beta1/corporate-actions', (context: ContextLike) => context.json({ corporate_actions: { cash_dividends: [corporateAction()] }, next_page_token: null }, 200));
+  app.get('/v1beta1/screener/stocks/most-actives', (context: ContextLike) => context.json({ last_updated: new Date().toISOString(), most_actives: [{ symbol: 'SPY', volume: 1000000, trade_count: 1000 }] }, 200));
+  app.get('/v1beta1/screener/stocks/movers', (context: ContextLike) => context.json({ last_updated: new Date().toISOString(), market_type: 'stocks', gainers: [{ symbol: 'SPY', price: 586.5, change: 1, percent_change: 0.1 }], losers: [] }, 200));
+  app.get('/v1beta1/screener/crypto/movers', (context: ContextLike) => context.json({ last_updated: new Date().toISOString(), market_type: 'crypto', gainers: [{ symbol: 'BTC/USD', price: 100000, change: 1, percent_change: 0.1 }], losers: [] }, 200));
 
   app.get('/v1/accounts', (context: ContextLike) => context.json([alpaca.accounts.all()[0] ?? {}], 200));
   app.post('/v1/accounts', async (context: ContextLike) => context.json({ id: crypto.randomUUID(), status: 'ACTIVE', ...(await jsonBody(context)) }, 200));
@@ -801,12 +907,33 @@ export function registerRoutes(app: AppLike, store: StoreLike): void {
   app.delete('/v1/journals/:journalId', (context: ContextLike) => context.json({}, 204));
   app.get('/v1/corporate_actions/announcements', (context: ContextLike) => context.json([corporateAction()], 200));
   app.get('/v1/corporate_actions/announcements/:corporateActionId', (context: ContextLike) => context.json(corporateAction(context.req.param('corporateActionId')), 200));
-  app.get('/v1/corporate-actions', (context: ContextLike) => context.json({ corporate_actions: [corporateAction()], next_page_token: null }, 200));
+  app.get('/v1/corporate-actions', (context: ContextLike) => context.json({ corporate_actions: { cash_dividends: [corporateAction()] }, next_page_token: null }, 200));
   app.get('/v1/events/accounts/status', () => sseResponse('account_status'));
   app.get('/v1/events/trades', () => sseResponse('trade'));
   app.get('/v1/events/journals/status', () => sseResponse('journal_status'));
   app.get('/v1/events/transfers/status', () => sseResponse('transfer_status'));
   app.get('/v1/events/nta', () => sseResponse('non_trading_activity'));
+  app.get('/v2/perpetuals/account_vitals', (context: ContextLike) => context.json({ equity: '100000', buying_power: '100000', maintenance_margin: '0' }, 200));
+  app.get('/v2/perpetuals/leverage', (context: ContextLike) => context.json({ symbol: context.req.query('symbol') ?? 'BTC/USD', leverage: 2 }, 200));
+  app.post('/v2/perpetuals/leverage', (context: ContextLike) => context.json({ symbol: context.req.query('symbol') ?? 'BTC/USD', leverage: Number(context.req.query('leverage') ?? 2) }, 200));
+  app.get('/v2/perpetuals/wallets', (context: ContextLike) => context.json(walletPayload('perp-wallet-1'), 200));
+  app.get('/v2/perpetuals/wallets/fees/estimate', (context: ContextLike) => context.json({ asset: context.req.query('asset') ?? 'USDC', amount: context.req.query('amount') ?? '1', fee: '0.01' }, 200));
+  app.get('/v2/perpetuals/wallets/transfers', (context: ContextLike) => context.json(walletPayload('perp-transfer-1'), 200));
+  app.post('/v2/perpetuals/wallets/transfers', async (context: ContextLike) => context.json({ ...walletPayload('perp-transfer-created'), ...(await jsonBody(context)) }, 200));
+  app.get('/v2/perpetuals/wallets/transfers/:transferId', (context: ContextLike) => context.json(walletPayload(context.req.param('transferId')), 200));
+  app.get('/v2/perpetuals/wallets/whitelists', (context: ContextLike) => context.json(whitelistedAddress('perp-whitelist-1'), 200));
+  app.post('/v2/perpetuals/wallets/whitelists', async (context: ContextLike) => context.json({ ...whitelistedAddress('perp-whitelist-created'), ...(await jsonBody(context)) }, 200));
+  app.delete('/v2/perpetuals/wallets/whitelists/:whitelistedAddressId', (context: ContextLike) => context.json({}, 200));
+  app.get('/v2/wallets', (context: ContextLike) => context.json(walletPayload('wallet-1'), 200));
+  app.get('/v2/wallets/fees/estimate', (context: ContextLike) => context.json({ asset: context.req.query('asset') ?? 'USDC', amount: context.req.query('amount') ?? '1', fee: '0.01' }, 200));
+  app.get('/v2/wallets/transfers', (context: ContextLike) => context.json(walletPayload('transfer-1'), 200));
+  app.post('/v2/wallets/transfers', async (context: ContextLike) => context.json({ ...walletPayload('transfer-created'), ...(await jsonBody(context)) }, 200));
+  app.get('/v2/wallets/transfers/:transferId', (context: ContextLike) => context.json(walletPayload(context.req.param('transferId')), 200));
+  app.get('/v2/wallets/whitelists', (context: ContextLike) => context.json(whitelistedAddress('whitelist-1'), 200));
+  app.post('/v2/wallets/whitelists', async (context: ContextLike) => context.json({ ...whitelistedAddress('whitelist-created'), ...(await jsonBody(context)) }, 200));
+  app.delete('/v2/wallets/whitelists/:whitelistedAddressId', (context: ContextLike) => context.json({}, 200));
+  app.get('/v3/clock', (context: ContextLike) => context.json({ clocks: [marketClock()] }, 200));
+  app.get('/v3/calendar/:market', (context: ContextLike) => context.json({ market: marketClock().market, calendar: [{ date: new Date().toISOString().slice(0, 10), core_start: '09:30', core_end: '16:00', settlement_date: new Date().toISOString().slice(0, 10) }] }, 200));
   app.post('/v1/rebalancing/portfolios', async (context: ContextLike) => context.json({ id: crypto.randomUUID(), status: 'active', ...(await jsonBody(context)) }, 200));
   app.get('/v1/rebalancing/portfolios', (context: ContextLike) => context.json([], 200));
   app.get('/v1/rebalancing/portfolios/:portfolioId', (context: ContextLike) => context.json({ id: context.req.param('portfolioId'), status: 'active' }, 200));

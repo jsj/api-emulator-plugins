@@ -3,10 +3,10 @@ import { now, saveState, sentryState } from './src/store.mjs';
 
 export const contract = {
   provider: 'sentry',
-  source: 'Sentry Integration Platform webhook docs',
-  docs: 'https://docs.sentry.io/organization/integrations/integration-platform/webhooks/',
-  scope: ['issue-webhook-delivery', 'issue-alert-webhook-delivery', 'inspection'],
-  fidelity: 'webhook-producer-subset',
+  source: 'Sentry Integration Platform webhook docs and REST API CLI-compatible subset',
+  docs: 'https://docs.sentry.io/api/',
+  scope: ['issue-webhook-delivery', 'issue-alert-webhook-delivery', 'organizations', 'projects', 'releases', 'release-files', 'inspection'],
+  fidelity: 'webhook-producer-and-rest-subset',
 };
 
 export const plugin = {
@@ -24,8 +24,8 @@ export function seedFromConfig(store, _baseUrl, config) {
   saveState(store, state);
 }
 
-export const label = 'Sentry webhook emulator';
-export const endpoints = 'control issue webhook delivery and inspect deliveries';
+export const label = 'Sentry API emulator';
+export const endpoints = 'control issue webhook delivery, REST organizations/projects/releases/files, and inspect deliveries';
 export const capabilities = contract.scope;
 export const initConfig = {
   sentry: {

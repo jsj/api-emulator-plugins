@@ -48,6 +48,20 @@ interface TwilioVerifyService extends Entity {
   friendly_name: string;
   code_length: number;
 }
+interface TwilioMessagingService extends Entity {
+  sid: string;
+  friendly_name: string;
+  inbound_request_url?: string;
+  status_callback?: string;
+}
+interface TwilioIncomingPhoneNumber extends Entity {
+  sid: string;
+  account_sid: string;
+  phone_number: string;
+  friendly_name: string;
+  sms_url?: string;
+  voice_url?: string;
+}
 interface TwilioVerification extends Entity {
   sid: string;
   service_sid: string;
@@ -78,6 +92,8 @@ function twilioStore(store: StoreLike) {
     messages: store.collection<TwilioMessage>("twilio.messages", ["sid", "account_sid", "to"]),
     calls: store.collection<TwilioCall>("twilio.calls", ["sid", "account_sid", "to"]),
     services: store.collection<TwilioVerifyService>("twilio.verify_services", ["sid"]),
+    messagingServices: store.collection<TwilioMessagingService>("twilio.messaging_services", ["sid"]),
+    phoneNumbers: store.collection<TwilioIncomingPhoneNumber>("twilio.incoming_phone_numbers", ["sid", "account_sid", "phone_number"]),
     verifications: store.collection<TwilioVerification>("twilio.verifications", ["sid", "service_sid", "to"]),
   };
 }
@@ -122,6 +138,43 @@ function publicCall(call: TwilioCall) {
     date_updated: call.updated_at,
     url: call.url,
     uri: `/2010-04-01/Accounts/${call.account_sid}/Calls/${call.sid}.json`,
+  };
+}
+
+function publicIncomingPhoneNumber(number: TwilioIncomingPhoneNumber) {
+  return {
+    sid: number.sid,
+    account_sid: number.account_sid,
+    phone_number: number.phone_number,
+    friendly_name: number.friendly_name,
+    sms_url: number.sms_url,
+    voice_url: number.voice_url,
+    date_created: number.created_at,
+    date_updated: number.updated_at,
+    uri: `/2010-04-01/Accounts/${number.account_sid}/IncomingPhoneNumbers/${number.sid}.json`,
+  };
+}
+
+function publicMessagingService(service: TwilioMessagingService) {
+  return {
+    sid: service.sid,
+    friendly_name: service.friendly_name,
+    inbound_request_url: service.inbound_request_url,
+    status_callback: service.status_callback,
+    date_created: service.created_at,
+    date_updated: service.updated_at,
+    url: `/v1/Services/${service.sid}`,
+  };
+}
+
+function publicVerifyService(service: TwilioVerifyService) {
+  return {
+    sid: service.sid,
+    friendly_name: service.friendly_name,
+    code_length: service.code_length,
+    date_created: service.created_at,
+    date_updated: service.updated_at,
+    url: `/v2/Services/${service.sid}`,
   };
 }
 
@@ -194,6 +247,30 @@ export function registerRoutes(app: AppLike, store: StoreLike): void {
     return message ? c.json(publicMessage(message)) : c.json({ code: 20404, message: "Message not found" }, 404);
   });
 
+  app.post("/2010-04-01/Accounts/:accountSid/IncomingPhoneNumbers.json", async (c) => {
+    const input = await body(c);
+    const phoneNumber = input.PhoneNumber || `+1555${String(twilioStore(store).phoneNumbers.all().length + 1).padStart(7, "0")}`;
+    const number = twilioStore(store).phoneNumbers.insert({
+      sid: sid("PN"),
+      account_sid: c.req.param("accountSid"),
+      phone_number: phoneNumber,
+      friendly_name: input.FriendlyName || phoneNumber,
+      sms_url: input.SmsUrl,
+      voice_url: input.VoiceUrl,
+    });
+    return c.json(publicIncomingPhoneNumber(number), 201);
+  });
+
+  app.get("/2010-04-01/Accounts/:accountSid/IncomingPhoneNumbers.json", (c) => {
+    const numbers = twilioStore(store).phoneNumbers.all().filter((n) => n.account_sid === c.req.param("accountSid"));
+    return c.json({ incoming_phone_numbers: numbers.map(publicIncomingPhoneNumber), page: 0, page_size: numbers.length });
+  });
+
+  app.get("/2010-04-01/Accounts/:accountSid/IncomingPhoneNumbers/:phoneNumberSid.json", (c) => {
+    const number = twilioStore(store).phoneNumbers.findOneBy("sid", c.req.param("phoneNumberSid"));
+    return number ? c.json(publicIncomingPhoneNumber(number)) : c.json({ code: 20404, message: "Incoming phone number not found" }, 404);
+  });
+
   app.post("/2010-04-01/Accounts/:accountSid/Calls.json", async (c) => {
     const input = await body(c);
     if (!input.To || !input.From) return c.json({ code: 21201, message: "To and From are required" }, 400);
@@ -213,6 +290,54 @@ export function registerRoutes(app: AppLike, store: StoreLike): void {
   app.get("/2010-04-01/Accounts/:accountSid/Calls.json", (c) => {
     const calls = twilioStore(store).calls.all().filter((m) => m.account_sid === c.req.param("accountSid"));
     return c.json({ calls: calls.map(publicCall), page: 0, page_size: calls.length });
+  });
+
+  app.get("/2010-04-01/Accounts/:accountSid/Calls/:callSid.json", (c) => {
+    const call = twilioStore(store).calls.findOneBy("sid", c.req.param("callSid"));
+    return call ? c.json(publicCall(call)) : c.json({ code: 20404, message: "Call not found" }, 404);
+  });
+
+  app.post("/v1/Services", async (c) => {
+    const input = await body(c);
+    if (!input.FriendlyName) return c.json({ code: 20001, message: "FriendlyName is required" }, 400);
+    const service = twilioStore(store).messagingServices.insert({
+      sid: sid("MG"),
+      friendly_name: input.FriendlyName,
+      inbound_request_url: input.InboundRequestUrl,
+      status_callback: input.StatusCallback,
+    });
+    return c.json(publicMessagingService(service), 201);
+  });
+
+  app.get("/v1/Services", (c) => {
+    const services = twilioStore(store).messagingServices.all();
+    return c.json({ services: services.map(publicMessagingService), meta: { page: 0, page_size: services.length } });
+  });
+
+  app.get("/v1/Services/:serviceSid", (c) => {
+    const service = twilioStore(store).messagingServices.findOneBy("sid", c.req.param("serviceSid"));
+    return service ? c.json(publicMessagingService(service)) : c.json({ code: 20404, message: "Messaging service not found" }, 404);
+  });
+
+  app.post("/v2/Services", async (c) => {
+    const input = await body(c);
+    if (!input.FriendlyName) return c.json({ code: 20001, message: "FriendlyName is required" }, 400);
+    const service = twilioStore(store).services.insert({
+      sid: sid("VA"),
+      friendly_name: input.FriendlyName,
+      code_length: Number(input.CodeLength || 6),
+    });
+    return c.json(publicVerifyService(service), 201);
+  });
+
+  app.get("/v2/Services", (c) => {
+    const services = twilioStore(store).services.all();
+    return c.json({ services: services.map(publicVerifyService), meta: { page: 0, page_size: services.length } });
+  });
+
+  app.get("/v2/Services/:serviceSid", (c) => {
+    const service = twilioStore(store).services.findOneBy("sid", c.req.param("serviceSid"));
+    return service ? c.json(publicVerifyService(service)) : c.json({ code: 20404, message: "Verify service not found" }, 404);
   });
 
   app.post("/v2/Services/:serviceSid/Verifications", async (c) => {
@@ -247,6 +372,9 @@ export function registerRoutes(app: AppLike, store: StoreLike): void {
   app.get("/", (c) => c.json({
     messages: twilioStore(store).messages.all().map(publicMessage),
     calls: twilioStore(store).calls.all().map(publicCall),
+    incoming_phone_numbers: twilioStore(store).phoneNumbers.all().map(publicIncomingPhoneNumber),
+    messaging_services: twilioStore(store).messagingServices.all().map(publicMessagingService),
+    verify_services: twilioStore(store).services.all().map(publicVerifyService),
     verifications: twilioStore(store).verifications.all().map((v) => publicVerification(v, true)),
   }));
 }

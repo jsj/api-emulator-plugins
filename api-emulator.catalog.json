@@ -6,6 +6,24 @@
       "specifier": "./@apple/api-emulator/src/index.ts",
       "description": "Apple provides identity, app store, device, and platform services for iOS and macOS apps."
     },
+    "app-store-connect": {
+      "kind": "package",
+      "packageName": "@api-emulator/app-store-connect",
+      "specifier": "./@app-store-connect/api-emulator.mjs",
+      "description": "App Store Connect provides APIs for iOS and macOS app metadata, builds, TestFlight, review submissions, users, and app operations."
+    },
+    "attio": {
+      "kind": "package",
+      "packageName": "@api-emulator/attio",
+      "specifier": "./@attio/api-emulator.mjs",
+      "description": "Attio provides CRM APIs for workspace identity, objects, attributes, records, searches, and lists."
+    },
+    "applovin": {
+      "kind": "package",
+      "packageName": "@api-emulator/applovin",
+      "specifier": "./@applovin/api-emulator.mjs",
+      "description": "AppLovin provides marketing and reporting APIs for campaigns, ads, revenue, spend, and performance metrics."
+    },
     "adyen": {
       "kind": "package",
       "packageName": "@api-emulator/adyen",
@@ -30,6 +48,12 @@
       "specifier": "./@browserbase/api-emulator.mjs",
       "description": "Browserbase provides hosted browser sessions for web automation, scraping, and agent workflows."
     },
+    "brave-search": {
+      "kind": "package",
+      "packageName": "@api-emulator/brave-search",
+      "specifier": "./@brave-search/api-emulator.mjs",
+      "description": "Brave Search provides web, news, and suggestion search APIs for agentic retrieval and SERP-style workflows."
+    },
     "clerk": {
       "kind": "package",
       "packageName": "@api-emulator/clerk",
@@ -42,6 +66,18 @@
       "specifier": "./@discord/api-emulator/src/index.ts",
       "description": "Discord provides community, messaging, guild, channel, bot, and interaction APIs."
     },
+    "facebook-messenger": {
+      "kind": "package",
+      "packageName": "@api-emulator/facebook-messenger",
+      "specifier": "./@facebook-messenger/api-emulator.mjs",
+      "description": "Facebook Messenger Platform provides Graph API surfaces for pages, conversations, Send API messages, user profiles, and webhooks."
+    },
+    "exa": {
+      "kind": "package",
+      "packageName": "@api-emulator/exa",
+      "specifier": "./@exa/api-emulator.mjs",
+      "description": "Exa provides neural search, contents, similar-link discovery, and answer APIs for AI agent retrieval workflows."
+    },
     "github": {
       "kind": "package",
       "packageName": "@api-emulator/github",
@@ -53,6 +89,24 @@
       "packageName": "@api-emulator/google",
       "specifier": "./@google/api-emulator/src/index.ts",
       "description": "Google provides OAuth and Workspace APIs for Gmail, Drive, Calendar, Docs, Sheets, and admin workflows."
+    },
+    "google-play": {
+      "kind": "package",
+      "packageName": "@api-emulator/google-play",
+      "specifier": "./@google-play/api-emulator.mjs",
+      "description": "Google Play provides Android Publisher and Play Developer Reporting APIs for tracks, reviews, products, subscriptions, and vitals."
+    },
+    "hubspot": {
+      "kind": "package",
+      "packageName": "@api-emulator/hubspot",
+      "specifier": "./@hubspot/api-emulator.mjs",
+      "description": "HubSpot provides CRM and developer APIs for accounts, contacts, companies, deals, properties, CMS tables, files, and secrets."
+    },
+    "oculus": {
+      "kind": "package",
+      "packageName": "@api-emulator/oculus",
+      "specifier": "./@oculus/api-emulator.mjs",
+      "description": "Oculus and Meta Horizon provide Graph API surfaces for app builds, release channels, redists, and platform utility workflows."
     },
     "linear": {
       "kind": "package",
@@ -108,6 +162,12 @@
       "specifier": "./@planetscale/api-emulator.mjs",
       "description": "PlanetScale provides MySQL database branching, organizations, deploy requests, passwords, and workflows."
     },
+    "piratebay": {
+      "kind": "package",
+      "packageName": "@api-emulator/piratebay",
+      "specifier": "./@piratebay/api-emulator.mjs",
+      "description": "Pirate Bay provides generic media index fixtures for search, item metadata, playback, and library-style workflows."
+    },
     "privy": {
       "kind": "package",
       "packageName": "@api-emulator/privy",
@@ -120,6 +180,12 @@
       "specifier": "./@resend/api-emulator/src/index.ts",
       "description": "Resend provides developer email APIs for sending messages, domains, contacts, audiences, and broadcasts."
     },
+    "salesforce": {
+      "kind": "package",
+      "packageName": "@api-emulator/salesforce",
+      "specifier": "./@salesforce/api-emulator.mjs",
+      "description": "Salesforce provides CRM APIs for org identity, SOQL queries, object metadata, and sObject record workflows."
+    },
     "sentry": {
       "kind": "package",
       "packageName": "@api-emulator/sentry",
@@ -131,6 +197,12 @@
       "packageName": "@api-emulator/slack",
       "specifier": "./@slack/api-emulator/src/index.ts",
       "description": "Slack provides workplace messaging APIs for OAuth, users, teams, conversations, messages, and webhooks."
+    },
+    "snap": {
+      "kind": "package",
+      "packageName": "@api-emulator/snap",
+      "specifier": "./@snap/api-emulator.mjs",
+      "description": "Snap Ads provides Marketing API surfaces for OAuth, organizations, ad accounts, campaigns, ads, and reporting."
     },
     "stripe": {
       "kind": "package",
@@ -150,11 +222,23 @@
       "specifier": "./@telegram/api-emulator/src/index.ts",
       "description": "Telegram provides bot APIs for updates, messages, chats, webhooks, and interactive bot workflows."
     },
+    "tiktok": {
+      "kind": "package",
+      "packageName": "@api-emulator/tiktok",
+      "specifier": "./@tiktok/api-emulator.mjs",
+      "description": "TikTok Ads provides Business API surfaces for advertisers, campaigns, ad groups, ads, creatives, audiences, pixels, and reports."
+    },
     "twilio": {
       "kind": "package",
       "packageName": "@api-emulator/twilio",
       "specifier": "./@twilio/api-emulator/src/index.ts",
       "description": "Twilio provides communications APIs for messaging, phone numbers, verification, voice, and customer engagement."
+    },
+    "tryprofound": {
+      "kind": "package",
+      "packageName": "@api-emulator/tryprofound",
+      "specifier": "./@tryprofound/api-emulator.mjs",
+      "description": "TryProfound provides AI search analytics APIs for organizations, prompts, reports, agents, knowledge bases, and content optimization."
     },
     "upstash": {
       "kind": "package",
@@ -167,6 +251,12 @@
       "packageName": "@api-emulator/vercel",
       "specifier": "./@vercel/api-emulator/src/index.ts",
       "description": "Vercel provides deployment platform APIs for projects, builds, domains, environment variables, teams, and accounts."
+    },
+    "whatsapp": {
+      "kind": "package",
+      "packageName": "@api-emulator/whatsapp",
+      "specifier": "./@whatsapp/api-emulator.mjs",
+      "description": "WhatsApp Cloud API provides Graph API surfaces for business phone numbers, messages, media, templates, and webhooks."
     }
   }
 }

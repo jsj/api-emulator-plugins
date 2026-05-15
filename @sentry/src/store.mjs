@@ -9,6 +9,10 @@ export function sentryState(store) {
     targets: [],
     deliveries: [],
     issues: [],
+    organizations: [{ id: '1', slug: 'emulator', name: 'Emulator Org' }],
+    projects: [{ id: '1', slug: 'api', name: 'API', organization: 'emulator', team: { id: '1', slug: 'emulator', name: 'Emulator' }, platform: 'javascript' }],
+    releases: [{ version: '1.0.0', shortVersion: '1.0.0', ref: null, url: null, dateCreated: now(), dateReleased: null, projects: [{ slug: 'api', name: 'API' }] }],
+    releaseFiles: {},
     nextIssueId: 1000,
   };
   store.setData?.('sentry:state', initial);

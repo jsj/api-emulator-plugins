@@ -250,6 +250,7 @@ export function createAdPlatformPlugin({ provider, label, docs, source, scope })
 
       app.get('/v18.0/:campaignId', getMetaCampaign);
       app.get('/v20.0/:campaignId', getMetaCampaign);
+      app.get('/v25.0/:campaignId', getMetaCampaign);
       app.get('/:graphVersion/:campaignId', getMetaCampaign);
 
       app.post('/:graphVersion/:campaignId', async (c) => {
@@ -466,14 +467,27 @@ export function createAdPlatformPlugin({ provider, label, docs, source, scope })
         });
       });
 
-      app.get('/v17/customers/:customerId/googleAds:search', (c) => {
+      function googleSearchResults(c, query) {
         hit('google.search');
         const customerId = c.req.param('customerId');
-        const query = c.req.query('query') ?? '';
         const idMatch = query.match(/campaign\.id\s*=\s*([A-Za-z0-9_-]+)/);
         let campaigns = state(store, provider).campaigns;
         if (idMatch) campaigns = campaigns.filter((campaign) => campaign.id === idMatch[1]);
-        return c.json({ results: campaigns.map((campaign) => toGoogleCampaign(campaign, customerId)) });
+        return campaigns.map((campaign) => toGoogleCampaign(campaign, customerId));
+      }
+
+      app.get('/v17/customers/:customerId/googleAds:search', (c) => {
+        return c.json({ results: googleSearchResults(c, c.req.query('query') ?? '') });
+      });
+
+      app.post('/v23/customers/:customerId/googleAds:searchStream', async (c) => {
+        const body = await c.req.json().catch(() => ({}));
+        return c.json([{ results: googleSearchResults(c, String(body.query ?? '')) }]);
+      });
+
+      app.get('/v23/customers:listAccessibleCustomers', (c) => {
+        hit('google.customers.list');
+        return c.json({ resourceNames: ['customers/1234567890'] });
       });
 
       app.post('/v17/customers/:customerId/campaigns:mutate', async (c) => {
