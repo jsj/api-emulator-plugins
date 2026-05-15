@@ -29,7 +29,7 @@ type VectorizeMatch = {
   namespace?: string;
 };
 
-type AiGatewayLogEntry = {
+type AIGatewayLogEntry = {
   id: string;
   created_at: string;
   provider: string;
@@ -89,6 +89,7 @@ export const contract = {
   docs: "https://developers.cloudflare.com/workers/runtime-apis/bindings/",
   scope: [
     "workers-ai",
+    "ai-gateway",
     "send-email",
     "d1",
     "kv",
@@ -226,7 +227,7 @@ const workflowInstances = new Map<string, WorkflowInstanceRecord[]>();
 const analyticsEvents = new Map<string, unknown[]>();
 const d1Databases = new Map<string, MemoryD1Database>();
 const kvNamespaces = new Map<string, MemoryKVNamespace>();
-const aiGatewayLogs = new Map<string, AiGatewayLogEntry[]>();
+const aiGatewayLogs = new Map<string, AIGatewayLogEntry[]>();
 const workersAiModels = [
   {
     id: "@cf/meta/llama-4-scout-17b-16e-instruct",
@@ -526,6 +527,72 @@ function vectorizeRoutes(app: AppLike): void {
   app.get?.("/inspect/vectorize", (c: any) =>
     c.json(Object.fromEntries(Array.from(vectorizeIndexes.entries()).map(([name, index]) => [name, index.list()]))),
   );
+}
+
+function aiGatewayKey(accountId: string, gatewayId: string): string {
+  return `${accountId}:${gatewayId}`;
+}
+
+function gatewayLogs(accountId: string, gatewayId: string): AIGatewayLogEntry[] {
+  const key = aiGatewayKey(accountId, gatewayId);
+  if (!aiGatewayLogs.has(key)) aiGatewayLogs.set(key, []);
+  return aiGatewayLogs.get(key)!;
+}
+
+function createGatewayLog(input: Partial<AIGatewayLogEntry> = {}): AIGatewayLogEntry {
+  const tokensIn = Number(input.tokens_in ?? input.usage_metadata?.input_tokens ?? 1);
+  const tokensOut = Number(input.tokens_out ?? input.usage_metadata?.output_tokens ?? 1);
+  return {
+    id: input.id ?? `emu-aigw-log-${crypto.randomUUID()}`,
+    created_at: input.created_at ?? new Date().toISOString(),
+    provider: input.provider ?? "openai",
+    model: input.model ?? "gpt-4o-mini",
+    duration: Number(input.duration ?? 100),
+    success: input.success ?? true,
+    cached: input.cached ?? false,
+    tokens_in: tokensIn,
+    tokens_out: tokensOut,
+    cost: Number(input.cost ?? 0),
+    usage_metadata: input.usage_metadata ?? {
+      input_tokens: tokensIn,
+      output_tokens: tokensOut,
+      input_cached_tokens: 0,
+      output_reasoning_tokens: 0,
+    },
+    request_head: input.request_head ?? JSON.stringify({ input: "emulator request" }),
+    response_head: input.response_head ?? JSON.stringify({ output: [] }),
+  };
+}
+
+function aiGatewayRoutes(app: AppLike): void {
+  app.get?.("/client/v4/accounts/:accountId/ai-gateway/gateways/:gatewayId/logs", (c: any) => {
+    const url = new URL(c.req.url);
+    const perPage = Math.max(1, Number(url.searchParams.get("per_page") ?? 50));
+    const logs = gatewayLogs(c.req.param("accountId"), c.req.param("gatewayId"))
+      .toSorted((a, b) => String(b.created_at).localeCompare(String(a.created_at)))
+      .slice(0, perPage);
+    return c.json(cloudflareEnvelope(logs));
+  });
+
+  app.get?.("/client/v4/accounts/:accountId/ai-gateway/gateways/:gatewayId/logs/:logId", (c: any) => {
+    const log = gatewayLogs(c.req.param("accountId"), c.req.param("gatewayId")).find((item) => item.id === c.req.param("logId"));
+    return c.json(cloudflareEnvelope(log ?? createGatewayLog({ id: c.req.param("logId") })));
+  });
+
+  app.post("/client/v4/accounts/:accountId/ai-gateway/gateways/:gatewayId/logs", async (c: any) => {
+    const log = createGatewayLog(await contextJson(c));
+    gatewayLogs(c.req.param("accountId"), c.req.param("gatewayId")).push(log);
+    return c.json(cloudflareEnvelope(log));
+  });
+
+  app.get?.("/inspect/ai-gateway/logs", (c: any) =>
+    c.json(Object.fromEntries(Array.from(aiGatewayLogs.entries()))),
+  );
+
+  app.post("/inspect/ai-gateway/reset", (c: any) => {
+    aiGatewayLogs.clear();
+    return c.json({ success: true });
+  });
 }
 
 function d1Routes(app: AppLike): void {
@@ -1908,6 +1975,7 @@ export const cloudflarePlugin: ServicePlugin = {
   register(app: AppLike) {
     workersAiRoutes(app);
     vectorizeRoutes(app);
+    aiGatewayRoutes(app);
     d1Routes(app);
     kvRoutes(app);
     queueRoutes(app);
@@ -1965,7 +2033,7 @@ export const cloudflarePlugin: ServicePlugin = {
 export const plugin = cloudflarePlugin;
 export const label = "Cloudflare API emulator";
 export const endpoints =
-  "Full Cloudflare OpenAPI /client/v4 generic adapter with deep Workers AI and Vectorize overrides, Send Email /email/send, D1, KV, R2, Queues, Workflows, Loader, Analytics Engine, Sandbox, Durable Objects";
+  "Full Cloudflare OpenAPI /client/v4 generic adapter with deep Workers AI, AI Gateway logs, and Vectorize overrides, Send Email /email/send, D1, KV, R2, Queues, Workflows, Loader, Analytics Engine, Sandbox, Durable Objects";
 export const manifest = {
   name: "cloudflare",
   label,
