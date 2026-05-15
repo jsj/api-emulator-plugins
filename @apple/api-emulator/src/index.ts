@@ -1,5 +1,5 @@
 import type { Hono } from "hono";
-import type { ServicePlugin, Store, WebhookDispatcher, TokenMap, AppEnv, RouteContext } from "@emulators/core";
+import type { ServicePlugin, Store, WebhookDispatcher, TokenMap, AppEnv, RouteContext } from "@api-emulator/core";
 import { getASCStore } from "./store.js";
 import { ascId } from "./jsonapi.js";
 import { reviewSubmissionRoutes } from "./routes/review-submissions.js";

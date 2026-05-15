@@ -1,4 +1,4 @@
-import { Store, type Collection } from "@emulators/core";
+import { Store, type Collection } from "@api-emulator/core";
 import type {
   ASCApp,
   ASCBuild,

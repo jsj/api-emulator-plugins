@@ -1,4 +1,4 @@
-import type { RouteContext } from "@emulators/core";
+import type { RouteContext } from "@api-emulator/core";
 import { getASCStore } from "../store.js";
 import { seedFromConfig, type ASCSeedConfig } from "../index.js";
 import { seedITunes } from "./itunes.js";

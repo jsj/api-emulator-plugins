@@ -1,4 +1,4 @@
-import type { RouteContext, Store } from "@emulators/core";
+import type { RouteContext, Store } from "@api-emulator/core";
 import { ascId, jsonApiResource, jsonApiList, jsonApiError, parseCursor } from "../jsonapi.js";
 
 // Auth entities stored in the generic store data (not collections)

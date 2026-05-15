@@ -1,4 +1,4 @@
-import type { RouteContext, Store } from "@emulators/core";
+import type { RouteContext, Store } from "@api-emulator/core";
 
 /**
  * iTunes Search / Lookup API emulator.

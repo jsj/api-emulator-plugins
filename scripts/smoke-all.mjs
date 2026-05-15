@@ -67,4 +67,13 @@ await new Promise((resolve, reject) => {
   child.on('error', reject);
 });
 
+await new Promise((resolve, reject) => {
+  const child = spawn(process.execPath, ['scripts/check-restored-provider-packages.mjs'], { stdio: 'inherit' });
+  child.on('exit', (code) => {
+    if (code === 0) resolve();
+    else reject(new Error('restored provider package smoke failed'));
+  });
+  child.on('error', reject);
+});
+
 console.log('plugin smoke tests ok');

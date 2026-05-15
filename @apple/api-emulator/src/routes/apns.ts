@@ -1,4 +1,4 @@
-import type { RouteContext, Store } from "@emulators/core";
+import type { RouteContext, Store } from "@api-emulator/core";
 
 const APNS_FAILURE_REASONS = new Set([
   "BadDeviceToken",

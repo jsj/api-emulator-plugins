@@ -1,4 +1,4 @@
-import type { RouteContext, Store } from "@emulators/core";
+import type { RouteContext, Store } from "@api-emulator/core";
 import { ascId, jsonApiResource, jsonApiError } from "../jsonapi.js";
 import { getASCStore } from "../store.js";
 

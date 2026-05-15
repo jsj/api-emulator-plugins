@@ -1,0 +1,76 @@
+{
+  "plugins": {
+    "apple": {
+      "kind": "package",
+      "packageName": "@api-emulator/apple",
+      "specifier": "./@apple/api-emulator/src/index.ts",
+      "description": "Apple API emulator plugin"
+    },
+    "aws": {
+      "kind": "package",
+      "packageName": "@api-emulator/aws",
+      "specifier": "./@aws/api-emulator/src/index.ts",
+      "description": "AWS API emulator plugin"
+    },
+    "clerk": {
+      "kind": "package",
+      "packageName": "@api-emulator/clerk",
+      "specifier": "./@clerk/api-emulator/src/index.ts",
+      "description": "Clerk API emulator plugin"
+    },
+    "github": {
+      "kind": "package",
+      "packageName": "@api-emulator/github",
+      "specifier": "./@github/api-emulator/src/index.ts",
+      "description": "GitHub API emulator plugin"
+    },
+    "google": {
+      "kind": "package",
+      "packageName": "@api-emulator/google",
+      "specifier": "./@google/api-emulator/src/index.ts",
+      "description": "Google Workspace API emulator plugin"
+    },
+    "microsoft": {
+      "kind": "package",
+      "packageName": "@api-emulator/microsoft",
+      "specifier": "./@microsoft/api-emulator/src/index.ts",
+      "description": "Microsoft API emulator plugin"
+    },
+    "mongoatlas": {
+      "kind": "package",
+      "packageName": "@api-emulator/mongoatlas",
+      "specifier": "./@mongoatlas/api-emulator/src/index.ts",
+      "description": "MongoDB Atlas API emulator plugin"
+    },
+    "okta": {
+      "kind": "package",
+      "packageName": "@api-emulator/okta",
+      "specifier": "./@okta/api-emulator/src/index.ts",
+      "description": "Okta API emulator plugin"
+    },
+    "resend": {
+      "kind": "package",
+      "packageName": "@api-emulator/resend",
+      "specifier": "./@resend/api-emulator/src/index.ts",
+      "description": "Resend API emulator plugin"
+    },
+    "slack": {
+      "kind": "package",
+      "packageName": "@api-emulator/slack",
+      "specifier": "./@slack/api-emulator/src/index.ts",
+      "description": "Slack API emulator plugin"
+    },
+    "stripe": {
+      "kind": "package",
+      "packageName": "@api-emulator/stripe",
+      "specifier": "./@stripe/api-emulator/src/index.ts",
+      "description": "Stripe API emulator plugin"
+    },
+    "vercel": {
+      "kind": "package",
+      "packageName": "@api-emulator/vercel",
+      "specifier": "./@vercel/api-emulator/src/index.ts",
+      "description": "Vercel API emulator plugin"
+    }
+  }
+}

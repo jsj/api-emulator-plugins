@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { Store } from "@emulators/core";
+import { Store } from "@api-emulator/core";
 import { Hono } from "hono";
-import type { AppEnv } from "@emulators/core";
+import type { AppEnv } from "@api-emulator/core";
 import { ascPlugin, seedFromConfig } from "../index.js";
 
 function createTestApp() {

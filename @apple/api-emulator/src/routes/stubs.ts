@@ -1,4 +1,4 @@
-import type { RouteContext } from "@emulators/core";
+import type { RouteContext } from "@api-emulator/core";
 import { registerCrud, registerNestedList, type CrudConfig } from "../crud.js";
 
 /**

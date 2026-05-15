@@ -1,4 +1,4 @@
-import type { Entity } from "@emulators/core";
+import type { Entity } from "@api-emulator/core";
 
 export interface ASCApp extends Entity {
   asc_id: string;

@@ -1,4 +1,4 @@
-import type { RouteContext } from "@emulators/core";
+import type { RouteContext } from "@api-emulator/core";
 import { getASCStore } from "../store.js";
 import { ascId, jsonApiResource, jsonApiList, jsonApiError, parseCursor, parseJsonApiBody } from "../jsonapi.js";
 import type { ReviewScenario, ReviewSubmissionState } from "../entities.js";

@@ -1,5 +1,5 @@
 import type { Hono } from "hono";
-import type { AppEnv, Store, Collection, Entity } from "@emulators/core";
+import type { AppEnv, Store, Collection, Entity } from "@api-emulator/core";
 import { ascId, jsonApiResource, jsonApiList, jsonApiError, parseCursor, parseJsonApiBody } from "./jsonapi.js";
 
 /**
