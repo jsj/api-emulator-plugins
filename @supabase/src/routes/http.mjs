@@ -1,3 +1,5 @@
+import { branch, deleteBranch, diffBranch, execSql, listBranches, promoteBranch } from '../../local-postgres/branch.mjs';
+
 function now() { return new Date().toISOString(); }
 function id(prefix) { return prefix + '_' + crypto.randomUUID().replaceAll('-', '').slice(0, 20); }
 function state(store) {
@@ -88,4 +90,24 @@ export function registerRoutes(app, store, contract) {
   app.get('/inspect/contract', (c) => c.json(contract));
   app.get('/inspect/state', (c) => c.json(state(store)));
   app.post('/inspect/reset', (c) => { store.setData?.('supabase:state', null); state(store); return c.json({ ok: true }); });
+  app.post('/_emu/supabase/branches', async (c) => {
+    const input = await body(c);
+    const source = input.source ?? input.parent ?? 'postgres';
+    const target = input.name ?? input.branch ?? `agent_branch_${crypto.randomUUID().replaceAll('-', '').slice(0, 12)}`;
+    await branch(source, target);
+    return c.json({ name: target, parent: source, connection_uri: `postgres://postgres:postgres@127.0.0.1:55432/${target}` }, 201);
+  });
+  app.get('/_emu/supabase/branches', async (c) => c.json({ data: await listBranches() }));
+  app.delete('/_emu/supabase/branches/:branch', async (c) => { await deleteBranch(c.req.param('branch')); return c.json({ ok: true }); });
+  app.post('/_emu/supabase/branches/:branch/exec', async (c) => {
+    const input = await body(c);
+    if (!input.sql) return c.json({ error: 'missing_sql' }, 400);
+    return c.json({ stdout: await execSql(c.req.param('branch'), input.sql) });
+  });
+  app.get('/_emu/supabase/branches/:branch/diff', async (c) => c.json(await diffBranch(c.req.param('branch'), c.req.query?.('parent') ?? 'postgres')));
+  app.post('/_emu/supabase/branches/:branch/promote', async (c) => {
+    const input = await body(c);
+    await promoteBranch(c.req.param('branch'), input.parent ?? 'postgres');
+    return c.json({ ok: true });
+  });
 }

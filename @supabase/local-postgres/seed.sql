@@ -5,6 +5,24 @@ create schema if not exists graphql_public;
 create schema if not exists vault;
 create schema if not exists extensions;
 
+do $$
+begin
+  create role anon;
+exception when duplicate_object then null;
+end $$;
+
+do $$
+begin
+  create role authenticated;
+exception when duplicate_object then null;
+end $$;
+
+do $$
+begin
+  create role service_role;
+exception when duplicate_object then null;
+end $$;
+
 create extension if not exists pgcrypto with schema extensions;
 
 create or replace function auth.uid()

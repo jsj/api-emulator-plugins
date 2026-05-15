@@ -1,3 +1,12 @@
+// @ts-ignore Node built-in types are optional for this package's declaration build.
+import { execFileSync } from "node:child_process";
+// @ts-ignore Node built-in types are optional for this package's declaration build.
+import { copyFileSync, existsSync, mkdirSync, rmSync } from "node:fs";
+// @ts-ignore Node built-in types are optional for this package's declaration build.
+import { dirname, resolve } from "node:path";
+
+declare const process: { env: Record<string, string | undefined> };
+
 type WorkersAiInput = {
   messages?: Array<{ role: string; content: string }>;
   stream?: boolean;
@@ -168,6 +177,12 @@ type D1ForeignKeyInfo = {
   from: string;
   to: string;
 };
+type D1DatabaseLike = {
+  prepare(sql: string): { bind(...params: unknown[]): unknown; raw(): Promise<unknown[][]> };
+  execute(sql: string, params?: unknown[]): ReturnType<typeof d1Result>;
+  exec(sql: string): Promise<unknown>;
+  exportSql(): string;
+};
 
 type SendEmailInput = {
   from?: unknown;
@@ -225,7 +240,8 @@ const sentEmails: SentEmailRecord[] = [];
 const queueMessages = new Map<string, QueueMessageRecord[]>();
 const workflowInstances = new Map<string, WorkflowInstanceRecord[]>();
 const analyticsEvents = new Map<string, unknown[]>();
-const d1Databases = new Map<string, MemoryD1Database>();
+const d1Databases = new Map<string, D1DatabaseLike>();
+const d1Branches = new Map<string, Set<string>>();
 const kvNamespaces = new Map<string, MemoryKVNamespace>();
 const aiGatewayLogs = new Map<string, AIGatewayLogEntry[]>();
 const workersAiModels = [
@@ -597,7 +613,7 @@ function aiGatewayRoutes(app: AppLike): void {
 
 function d1Routes(app: AppLike): void {
   const database = (id: string) => {
-    if (!d1Databases.has(id)) d1Databases.set(id, new MemoryD1Database());
+    if (!d1Databases.has(id)) d1Databases.set(id, new FileD1Database(d1MainPath(id)));
     return d1Databases.get(id)!;
   };
   const serializeDatabase = (id: string) => ({
@@ -636,7 +652,7 @@ function d1Routes(app: AppLike): void {
     const body = await contextJson(c);
     const statements = Array.isArray(body) ? body : [body];
     const result = statements.map((statement) => {
-      const prepared = database(c.req.param("databaseId")).prepare(String(statement.sql ?? "")).bind(...(statement.params ?? []));
+      const prepared = database(c.req.param("databaseId")).prepare(String(statement.sql ?? "")).bind(...(statement.params ?? [])) as { raw(): Promise<unknown[][]> };
       return prepared.raw();
     });
     return c.json(cloudflareEnvelope(await Promise.all(result)));
@@ -651,6 +667,57 @@ function d1Routes(app: AppLike): void {
     const body = await contextJson(c);
     await database(c.req.param("databaseId")).exec(String(body?.sql ?? ""));
     return c.json(cloudflareEnvelope({ success: true }));
+  });
+  app.post("/_emu/d1/databases", async (c: any) => {
+    const body = await contextJson(c);
+    const id = String(body?.id ?? body?.name ?? crypto.randomUUID());
+    database(id);
+    return c.json({ id, path: d1MainPath(id) }, 201);
+  });
+  app.get?.("/_emu/d1/databases", (c: any) =>
+    c.json({ data: Array.from(d1Databases.keys()).map((id) => ({ id, path: d1MainPath(id) })) }),
+  );
+  app.post("/_emu/d1/databases/:id/branches", async (c: any) => {
+    const body = await contextJson(c);
+    const id = c.req.param("id");
+    database(id);
+    const branch = String(body?.name ?? body?.branch ?? `agent_branch_${crypto.randomUUID().replaceAll("-", "").slice(0, 12)}`);
+    assertD1Name(branch);
+    mkdirSync(dirname(d1BranchPath(id, branch)), { recursive: true });
+    copyFileSync(d1MainPath(id), d1BranchPath(id, branch));
+    d1BranchesFor(id).add(branch);
+    d1Databases.set(d1BranchKey(id, branch), new FileD1Database(d1BranchPath(id, branch)));
+    return c.json({ id, branch, path: d1BranchPath(id, branch) }, 201);
+  });
+  app.get?.("/_emu/d1/databases/:id/branches", (c: any) =>
+    c.json({ data: Array.from(d1BranchesFor(c.req.param("id"))).map((branch) => ({ branch, path: d1BranchPath(c.req.param("id"), branch) })) }),
+  );
+  app.delete?.("/_emu/d1/databases/:id/branches/:branch", (c: any) => {
+    const id = c.req.param("id");
+    const branch = c.req.param("branch");
+    d1Databases.delete(d1BranchKey(id, branch));
+    d1BranchesFor(id).delete(branch);
+    rmSync(d1BranchPath(id, branch), { force: true });
+    return c.json({ ok: true });
+  });
+  app.post("/_emu/d1/databases/:id/branches/:branch/exec", async (c: any) => {
+    const body = await contextJson(c);
+    const db = branchDatabase(c.req.param("id"), c.req.param("branch"));
+    const result = await db.exec(String(body?.sql ?? ""));
+    return c.json({ result });
+  });
+  app.get?.("/_emu/d1/databases/:id/branches/:branch/export", (c: any) =>
+    c.json({ sql: branchDatabase(c.req.param("id"), c.req.param("branch")).exportSql() }),
+  );
+  app.get?.("/_emu/d1/databases/:id/branches/:branch/diff", (c: any) =>
+    c.json(diffD1(c.req.param("id"), c.req.param("branch"))),
+  );
+  app.post("/_emu/d1/databases/:id/branches/:branch/promote", (c: any) => {
+    const id = c.req.param("id");
+    const branch = c.req.param("branch");
+    copyFileSync(d1BranchPath(id, branch), d1MainPath(id));
+    d1Databases.set(id, new FileD1Database(d1MainPath(id)));
+    return c.json({ ok: true });
   });
 }
 
@@ -959,6 +1026,156 @@ function registerCloudflareOpenApiAdapter(app: AppLike): void {
   app.put?.("/client/v4/*", handler);
   app.patch?.("/client/v4/*", handler);
   app.delete?.("/client/v4/*", handler);
+}
+
+function d1Root(): string {
+  return resolve(process.env.CLOUDFLARE_D1_EMU_DIR ?? ".emu/d1");
+}
+
+function assertD1Name(value: string): void {
+  if (!/^[a-zA-Z0-9_.-]+$/.test(value)) throw new Error(`Invalid D1 name: ${value}`);
+}
+
+function d1MainPath(id: string): string {
+  assertD1Name(id);
+  return resolve(d1Root(), `${id}.sqlite`);
+}
+
+function d1BranchPath(id: string, branch: string): string {
+  assertD1Name(id);
+  assertD1Name(branch);
+  return resolve(d1Root(), "branches", id, `${branch}.sqlite`);
+}
+
+function d1BranchKey(id: string, branch: string): string {
+  return `${id}:${branch}`;
+}
+
+function d1BranchesFor(id: string): Set<string> {
+  if (!d1Branches.has(id)) d1Branches.set(id, new Set());
+  return d1Branches.get(id)!;
+}
+
+function branchDatabase(id: string, branch: string): D1DatabaseLike {
+  const key = d1BranchKey(id, branch);
+  if (!d1Databases.has(key)) {
+    const file = d1BranchPath(id, branch);
+    if (!existsSync(file)) throw new Error(`No such D1 branch: ${branch}`);
+    d1Databases.set(key, new FileD1Database(file));
+  }
+  return d1Databases.get(key)!;
+}
+
+function d1Snapshot(db: D1DatabaseLike) {
+  const tables = db.execute("select name, type, sql from sqlite_master where type in ('table', 'index', 'trigger', 'view') and name not like 'sqlite_%'").results;
+  const rowCounts = Object.fromEntries(
+    tables
+      .filter((item) => item.type === "table")
+      .map((item) => {
+        const name = String(item.name);
+        const rows = db.execute(`select count(*) as count from "${name.replaceAll('"', '""')}"`).results;
+        return [name, Number(rows[0]?.count ?? 0)];
+      }),
+  );
+  return { tables, rowCounts };
+}
+
+function diffD1(id: string, branch: string) {
+  const parent = d1Snapshot(d1Databases.get(id) ?? new FileD1Database(d1MainPath(id)));
+  const child = d1Snapshot(branchDatabase(id, branch));
+  const key = (item: D1Row) => `${item.type}:${item.name}`;
+  const parentMap = new Map(parent.tables.map((item) => [key(item), JSON.stringify(item)]));
+  const childMap = new Map(child.tables.map((item) => [key(item), JSON.stringify(item)]));
+  const added = child.tables.filter((item) => !parentMap.has(key(item)));
+  const removed = parent.tables.filter((item) => !childMap.has(key(item)));
+  const changed = child.tables.filter((item) => parentMap.has(key(item)) && parentMap.get(key(item)) !== JSON.stringify(item));
+  const changedTables = Object.keys({ ...parent.rowCounts, ...child.rowCounts })
+    .filter((name) => parent.rowCounts[name] !== child.rowCounts[name])
+    .map((name) => ({ name, parentRows: parent.rowCounts[name] ?? 0, branchRows: child.rowCounts[name] ?? 0 }));
+  return {
+    provider: "cloudflare-d1",
+    database: id,
+    branch,
+    schema: {
+      addedTables: added.filter((item) => item.type === "table").map((item) => item.name),
+      removedTables: removed.filter((item) => item.type === "table").map((item) => item.name),
+      changedTables: changed.filter((item) => item.type === "table").map((item) => item.name),
+      addedIndexes: added.filter((item) => item.type === "index").map((item) => item.name),
+      removedIndexes: removed.filter((item) => item.type === "index").map((item) => item.name),
+      changedPolicies: [],
+    },
+    data: { changedTables },
+    sqlite: { added, removed, changed },
+  };
+}
+
+class FileD1Database {
+  constructor(readonly filePath: string) {
+    mkdirSync(dirname(filePath), { recursive: true });
+    this.sqlite("PRAGMA foreign_keys = ON");
+  }
+
+  prepare(sql: string) {
+    return new FileD1PreparedStatement(this, sql);
+  }
+
+  execute(sql: string, params: unknown[] = []) {
+    const statement = interpolateSql(sql, params);
+    const normalized = normalizeSql(sql);
+    if (normalized.startsWith("select") || normalized.startsWith("pragma")) {
+      return d1Result(this.query(statement), 0);
+    }
+    this.sqlite(statement);
+    return d1Result([], 1);
+  }
+
+  async exec(sql: string) {
+    const started = performance.now();
+    this.sqlite(sql);
+    return { count: splitSqlStatements(sql).length, duration: performance.now() - started };
+  }
+
+  exportSql(): string {
+    const statements = this.query("select type, name, sql from sqlite_master where sql is not null and name not like 'sqlite_%' order by type = 'table' desc, name")
+      .map((row) => `${row.sql};`);
+    const tables = this.query("select name from sqlite_master where type = 'table' and name not like 'sqlite_%' order by name")
+      .map((row) => String(row.name));
+    for (const table of tables) {
+      const rows = this.query(`select * from "${table.replaceAll('"', '""')}"`);
+      for (const row of rows) {
+        const columns = Object.keys(row);
+        statements.push(`INSERT INTO "${table.replaceAll('"', '""')}" (${columns.map((column) => `"${column.replaceAll('"', '""')}"`).join(", ")}) VALUES (${columns.map((column) => sqlLiteral(row[column])).join(", ")});`);
+      }
+    }
+    return statements.join("\n");
+  }
+
+  private query(sql: string): D1Row[] {
+    const out = this.sqlite(sql, ["-json"]);
+    return out ? JSON.parse(out) as D1Row[] : [];
+  }
+
+  private sqlite(sql: string, flags: string[] = []): string {
+    return execFileSync("sqlite3", [...flags, this.filePath, sql], { encoding: "utf8" }).trim();
+  }
+}
+
+class FileD1PreparedStatement {
+  private params: unknown[] = [];
+
+  constructor(
+    private readonly db: FileD1Database,
+    private readonly sql: string,
+  ) {}
+
+  bind(...params: unknown[]) {
+    this.params = params;
+    return this;
+  }
+
+  async raw<T = unknown[]>(): Promise<T[]> {
+    return this.db.execute(this.sql, this.params).results.map((row) => Object.values(row) as T);
+  }
 }
 
 class MemoryD1Database {
@@ -1879,7 +2096,7 @@ function projectRow(row: D1Row, projection: string[] | null): D1Row {
   return Object.fromEntries(projection.map((column) => [column, row[column]]));
 }
 
-function d1Result(results: D1Row[], changes: number) {
+function d1Result(results: D1Row[], changes: number, lastRowId: unknown = results.at(-1)?.id ?? null) {
   return {
     success: true,
     results,
@@ -1888,9 +2105,13 @@ function d1Result(results: D1Row[], changes: number) {
       rows_read: results.length,
       rows_written: changes,
       duration: 0,
-      last_row_id: results.at(-1)?.id ?? null,
+      last_row_id: lastRowId,
     },
   };
+}
+
+function splitSqlStatements(sql: string): string[] {
+  return sql.split(";").map((statement) => statement.trim()).filter(Boolean);
 }
 
 function sqlLiteral(value: unknown): string {
@@ -1898,6 +2119,11 @@ function sqlLiteral(value: unknown): string {
   if (typeof value === "number" || typeof value === "bigint") return String(value);
   if (typeof value === "boolean") return value ? "1" : "0";
   return `'${String(value).replaceAll("'", "''")}'`;
+}
+
+function interpolateSql(sql: string, params: unknown[]): string {
+  let index = 0;
+  return sql.replace(/\?/g, () => sqlLiteral(params[index++]));
 }
 
 async function toBytes(

@@ -124,18 +124,38 @@ assertEqual(matches.matches[0].metadata.title, "First document");
 
 const app = new TestApp();
 cloudflarePlugin.register(app as any);
-await app.request("POST", "/client/v4/accounts/test/d1/database/routes-db/import", {
-  sql: "CREATE TABLE route_items (id TEXT PRIMARY KEY, name TEXT)",
+const routesDb = `routes-db-${Date.now()}`;
+await app.request("POST", `/client/v4/accounts/test/d1/database/${routesDb}/import`, {
+  sql: "CREATE TABLE route_items (id TEXT NOT NULL PRIMARY KEY, name TEXT)",
 });
-await app.request("POST", "/client/v4/accounts/test/d1/database/routes-db/query", {
+await app.request("POST", `/client/v4/accounts/test/d1/database/${routesDb}/query`, {
   sql: "INSERT INTO route_items (id, name) VALUES (?, ?)",
   params: ["route-1", "Route"],
 });
-const d1RouteResponse = await app.request("POST", "/client/v4/accounts/test/d1/database/routes-db/query", {
+const d1RouteResponse = await app.request("POST", `/client/v4/accounts/test/d1/database/${routesDb}/query`, {
   sql: "SELECT name FROM route_items WHERE id = ?",
   params: ["route-1"],
 });
 assertEqual((await d1RouteResponse.json() as any).result[0].results[0].name, "Route");
+const d1PragmaResponse = await app.request("POST", `/client/v4/accounts/test/d1/database/${routesDb}/query`, {
+  sql: "PRAGMA table_info(route_items)",
+});
+assertEqual((await d1PragmaResponse.json() as any).result[0].results[1].name, "name");
+await app.request("POST", `/_emu/d1/databases/${routesDb}/branches`, { name: "agent_branch_smoke" });
+await app.request("POST", `/_emu/d1/databases/${routesDb}/branches/agent_branch_smoke/exec`, {
+  sql: "CREATE TABLE branch_only (id TEXT NOT NULL PRIMARY KEY); INSERT INTO branch_only (id) VALUES ('b1');",
+});
+const d1DiffResponse = await app.request("GET", `/_emu/d1/databases/${routesDb}/branches/agent_branch_smoke/diff`);
+assertEqual((await d1DiffResponse.json() as any).schema.addedTables[0], "branch_only");
+const d1ParentIsolationResponse = await app.request("POST", `/client/v4/accounts/test/d1/database/${routesDb}/query`, {
+  sql: "SELECT name FROM sqlite_master WHERE name = 'branch_only'",
+});
+assertEqual((await d1ParentIsolationResponse.json() as any).result[0].results.length, 0);
+await app.request("POST", `/_emu/d1/databases/${routesDb}/branches/agent_branch_smoke/promote`);
+const d1PromotedResponse = await app.request("POST", `/client/v4/accounts/test/d1/database/${routesDb}/query`, {
+  sql: "SELECT name FROM sqlite_master WHERE name = 'branch_only'",
+});
+assertEqual((await d1PromotedResponse.json() as any).result[0].results[0].name, "branch_only");
 
 await app.request("POST", "/client/v4/accounts/test/storage/kv/namespaces", { title: "ROUTE_KV" });
 await app.request("PUT", "/client/v4/accounts/test/storage/kv/namespaces/ROUTE_KV/values/greeting", "hello-route");
