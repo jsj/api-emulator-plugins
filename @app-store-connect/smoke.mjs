@@ -73,6 +73,9 @@ async function call(method, path, body = {}, params = {}, query = {}) {
 
 assert.equal(contract.provider, 'app-store-connect');
 assert.deepEqual(contract.scope.every((capability) => capability.startsWith('asc-')), true);
+assert.equal(routes.has('GET /auth/authorize'), false);
+assert.equal(routes.has('POST /3/device/:token'), false);
+assert.equal(routes.has('GET /database/1/:container/:environment/:database/users/current'), false);
 
 const apps = await call('GET', '/v1/apps');
 assert.equal(apps.payload.data[0].id, '1234567890');

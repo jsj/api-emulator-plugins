@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { Store } from "@api-emulator/core";
 import { Hono } from "hono";
 import type { AppEnv } from "@api-emulator/core";
-import { ascPlugin } from "../index.js";
+import { plugin } from "../index.js";
 import { seedITunes } from "../routes/itunes.js";
 
 function createTestApp() {
@@ -33,7 +33,7 @@ function createTestApp() {
   });
 
   const webhooks = { dispatch: () => {}, subscribe: () => () => {} } as never;
-  ascPlugin.register(app, store, webhooks, baseUrl);
+  plugin.register(app, store, webhooks, baseUrl);
 
   return { app, store };
 }

@@ -1,10 +1,22 @@
 {
   "plugins": {
-    "apple": {
+    "adp": {
       "kind": "package",
-      "packageName": "@api-emulator/apple",
-      "specifier": "./@apple/api-emulator/src/index.ts",
-      "description": "Apple provides identity, app store, device, and platform services for iOS and macOS apps."
+      "packageName": "@api-emulator/adp",
+      "specifier": "./@adp/api-emulator.mjs",
+      "description": "ADP provides Human Capital Management APIs for workers, payroll events, organizations, time, and pay data."
+    },
+    "adyen": {
+      "kind": "package",
+      "packageName": "@api-emulator/adyen",
+      "specifier": "./@adyen/api-emulator.mjs",
+      "description": "Adyen is a payments platform for checkout, payment methods, transaction processing, and payouts."
+    },
+    "amazon-seller": {
+      "kind": "package",
+      "packageName": "@api-emulator/amazon-seller",
+      "specifier": "./@amazon-seller/api-emulator.mjs",
+      "description": "Amazon Selling Partner API provides seller marketplace, orders, inventory, and restricted data token workflows."
     },
     "app-store-connect": {
       "kind": "package",
@@ -12,11 +24,35 @@
       "specifier": "./@app-store-connect/api-emulator.mjs",
       "description": "App Store Connect provides APIs for iOS and macOS app metadata, builds, TestFlight, review submissions, users, and app operations."
     },
-    "attio": {
+    "apple": {
       "kind": "package",
-      "packageName": "@api-emulator/attio",
-      "specifier": "./@attio/api-emulator.mjs",
-      "description": "Attio provides CRM APIs for workspace identity, objects, attributes, records, searches, and lists."
+      "packageName": "@api-emulator/apple",
+      "specifier": "./@apple/api-emulator/src/index.ts",
+      "description": "Apple provides Sign in with Apple, CloudKit/iCloud app data, APNs, app store, device, and platform services for iOS and macOS apps."
+    },
+    "applecare": {
+      "kind": "package",
+      "packageName": "@api-emulator/applecare",
+      "specifier": "./@applecare/api-emulator.mjs",
+      "description": "AppleCare coverage APIs provide organization device inventory, warranty coverage, service eligibility, and repair case workflows."
+    },
+    "apple-maps": {
+      "kind": "package",
+      "packageName": "@api-emulator/apple-maps",
+      "specifier": "./@apple-maps/api-emulator.mjs",
+      "description": "Apple Maps Server API provides map tokens, search, geocoding, and reverse geocoding for location-aware apps."
+    },
+    "apple-music": {
+      "kind": "package",
+      "packageName": "@api-emulator/apple-music",
+      "specifier": "./@apple-music/api-emulator.mjs",
+      "description": "Apple Music provides MusicKit and iTunes Search APIs for catalog search, songs, albums, artists, library playlists, and playlist tracks."
+    },
+    "apple-podcasts": {
+      "kind": "package",
+      "packageName": "@api-emulator/apple-podcasts",
+      "specifier": "./@apple-podcasts/api-emulator.mjs",
+      "description": "Apple Podcasts provides iTunes Search-compatible podcast search, lookup, episode, catalog, and library subscription workflows."
     },
     "applovin": {
       "kind": "package",
@@ -24,11 +60,29 @@
       "specifier": "./@applovin/api-emulator.mjs",
       "description": "AppLovin provides marketing and reporting APIs for campaigns, ads, revenue, spend, and performance metrics."
     },
-    "adyen": {
+    "argo": {
       "kind": "package",
-      "packageName": "@api-emulator/adyen",
-      "specifier": "./@adyen/api-emulator.mjs",
-      "description": "Adyen is a payments platform for checkout, payment methods, transaction processing, and payouts."
+      "packageName": "@api-emulator/argo",
+      "specifier": "./@argo/api-emulator.mjs",
+      "description": "Argo Workflows provides workflow orchestration APIs for submitting, listing, inspecting, and deleting Kubernetes-native workflows."
+    },
+    "arxiv": {
+      "kind": "package",
+      "packageName": "@api-emulator/arxiv",
+      "specifier": "./@arxiv/api-emulator.mjs",
+      "description": "arXiv provides Atom feed APIs for scholarly paper search, metadata retrieval, and offset pagination workflows."
+    },
+    "attio": {
+      "kind": "package",
+      "packageName": "@api-emulator/attio",
+      "specifier": "./@attio/api-emulator.mjs",
+      "description": "Attio provides CRM APIs for workspace identity, objects, attributes, records, searches, and lists."
+    },
+    "audible": {
+      "kind": "package",
+      "packageName": "@api-emulator/audible",
+      "specifier": "./@audible/api-emulator.mjs",
+      "description": "Audible provides audiobook catalog, library, review, and wishlist API surfaces for local client compatibility tests."
     },
     "auth0": {
       "kind": "package",
@@ -42,11 +96,23 @@
       "specifier": "./@aws/api-emulator/src/index.ts",
       "description": "AWS provides cloud infrastructure APIs for storage, queues, identity, compute, and managed services."
     },
-    "browserbase": {
+    "baseten": {
       "kind": "package",
-      "packageName": "@api-emulator/browserbase",
-      "specifier": "./@browserbase/api-emulator.mjs",
-      "description": "Browserbase provides hosted browser sessions for web automation, scraping, and agent workflows."
+      "packageName": "@api-emulator/baseten",
+      "specifier": "./@baseten/api-emulator.mjs",
+      "description": "Baseten provides model deployment, management, and inference APIs including OpenAI-compatible model endpoints."
+    },
+    "bilt": {
+      "kind": "package",
+      "packageName": "@api-emulator/bilt",
+      "specifier": "./@bilt/api-emulator.mjs",
+      "description": "Bilt Rewards-style APIs provide member profiles, rewards accounts, points ledger, and rent payment workflows."
+    },
+    "bland": {
+      "kind": "package",
+      "packageName": "@api-emulator/bland",
+      "specifier": "./@bland/api-emulator.mjs",
+      "description": "Bland provides voice AI APIs for account details, outbound calls, call logs, pathways, and agent tools."
     },
     "brave-search": {
       "kind": "package",
@@ -54,11 +120,113 @@
       "specifier": "./@brave-search/api-emulator.mjs",
       "description": "Brave Search provides web, news, and suggestion search APIs for agentic retrieval and SERP-style workflows."
     },
+    "brex": {
+      "kind": "package",
+      "packageName": "@api-emulator/brex",
+      "specifier": "./@brex/api-emulator.mjs",
+      "description": "Brex provides spend-management APIs for vendors, users, payments, and team workflows."
+    },
+    "browserbase": {
+      "kind": "package",
+      "packageName": "@api-emulator/browserbase",
+      "specifier": "./@browserbase/api-emulator.mjs",
+      "description": "Browserbase provides hosted browser sessions for web automation, scraping, and agent workflows."
+    },
+    "canva": {
+      "kind": "package",
+      "packageName": "@api-emulator/canva",
+      "specifier": "./@canva/api-emulator.mjs",
+      "description": "Canva Connect APIs provide user, design, asset upload, import, and export workflows for Canva-integrated apps."
+    },
+    "canvas": {
+      "kind": "package",
+      "packageName": "@api-emulator/canvas",
+      "specifier": "./@canvas/api-emulator.mjs",
+      "description": "Canvas LMS provides education APIs for users, courses, assignments, enrollments, submissions, and learning workflows."
+    },
+    "capcut": {
+      "kind": "package",
+      "packageName": "@api-emulator/capcut",
+      "specifier": "./@capcut/api-emulator.mjs",
+      "description": "CapCut-style creative APIs manage templates, projects, media inputs, and render task polling for video automation workflows."
+    },
+    "clay": {
+      "kind": "package",
+      "packageName": "@api-emulator/clay",
+      "specifier": "./@clay/api-emulator.mjs",
+      "description": "Clay provides APIs and webhook surfaces for sales intelligence tables, rows, enrichments, and workflows."
+    },
     "clerk": {
       "kind": "package",
       "packageName": "@api-emulator/clerk",
       "specifier": "./@clerk/api-emulator/src/index.ts",
       "description": "Clerk provides user authentication, sessions, organizations, OAuth, and identity-management primitives."
+    },
+    "coinbase": {
+      "kind": "package",
+      "packageName": "@api-emulator/coinbase",
+      "specifier": "./@coinbase/api-emulator.mjs",
+      "description": "Coinbase Advanced Trade APIs provide market products, account balances, historical orders, and order preview workflows."
+    },
+    "coderabbit": {
+      "kind": "package",
+      "packageName": "@api-emulator/coderabbit",
+      "specifier": "./@coderabbit/api-emulator.mjs",
+      "description": "CodeRabbit provides code-review automation APIs for users, seats, roles, review metrics, and audit logs."
+    },
+    "concur": {
+      "kind": "package",
+      "packageName": "@api-emulator/concur",
+      "specifier": "./@concur/api-emulator.mjs",
+      "description": "SAP Concur provides travel and expense APIs for users, expense reports, entries, receipts, and travel requests."
+    },
+    "coreweave": {
+      "kind": "package",
+      "packageName": "@api-emulator/coreweave",
+      "specifier": "./@coreweave/api-emulator.mjs",
+      "description": "CoreWeave provides Kubernetes Service APIs for CKS clusters, regions, node types, and kubeconfig workflows."
+    },
+    "craigslist": {
+      "kind": "package",
+      "packageName": "@api-emulator/craigslist",
+      "specifier": "./@craigslist/api-emulator.mjs",
+      "description": "Craigslist provides Bulkpost OpenAPI surfaces for OAuth, billing, account messages, posting stats, post edits, images, status, RSS feeds, and classifieds search workflows."
+    },
+    "crusoe": {
+      "kind": "package",
+      "packageName": "@api-emulator/crusoe",
+      "specifier": "./@crusoe/api-emulator.mjs",
+      "description": "Crusoe Cloud provides cloud infrastructure APIs for projects, GPU instance types, virtual machines, SSH keys, and operations."
+    },
+    "datadog": {
+      "kind": "package",
+      "packageName": "@api-emulator/datadog",
+      "specifier": "./@datadog/api-emulator.mjs",
+      "description": "Datadog provides observability APIs for metrics, monitors, logs, traces, hosts, dashboards, and events."
+    },
+    "doppler": {
+      "kind": "package",
+      "packageName": "@api-emulator/doppler",
+      "specifier": "./@doppler/api-emulator.mjs",
+      "description": "Doppler provides secrets management APIs for projects, configs, secret reads, and secret downloads."
+    },
+    "decagon": {
+      "kind": "package",
+      "packageName": "@api-emulator/decagon",
+      "specifier": "./@decagon/api-emulator.mjs",
+      "description": "Decagon provides AI customer-support APIs for outbound chat messages and support automation workflows."
+    },
+    "deel": {
+      "kind": "package",
+      "packageName": "@api-emulator/deel",
+      "specifier": "./@deel/api-emulator.mjs",
+      "description": "Deel provides workforce APIs for people, legal entities, contracts, invoices, roles, and organization structures."
+    },
+    "devin": {
+      "kind": "package",
+      "packageName": "@api-emulator/devin",
+      "specifier": "./@devin/api-emulator.mjs",
+      "description": "Devin provides AI engineering agent APIs for sessions, messages, PR reviews, users, and knowledge notes."
     },
     "discord": {
       "kind": "package",
@@ -66,11 +234,41 @@
       "specifier": "./@discord/api-emulator/src/index.ts",
       "description": "Discord provides community, messaging, guild, channel, bot, and interaction APIs."
     },
-    "facebook-messenger": {
+    "doordash": {
       "kind": "package",
-      "packageName": "@api-emulator/facebook-messenger",
-      "specifier": "./@facebook-messenger/api-emulator.mjs",
-      "description": "Facebook Messenger Platform provides Graph API surfaces for pages, conversations, Send API messages, user profiles, and webhooks."
+      "packageName": "@api-emulator/doordash",
+      "specifier": "./@doordash/api-emulator.mjs",
+      "description": "DoorDash provides Drive, Drive Classic, Developer, and Marketplace APIs for delivery quotes, serviceability, stores, businesses, menus, orders, item management, promotions, and webhooks."
+    },
+    "eight-sleep": {
+      "kind": "package",
+      "packageName": "@api-emulator/eight-sleep",
+      "specifier": "./@eight-sleep/api-emulator.mjs",
+      "description": "Eight Sleep provides health and smart-bed APIs for user profiles, devices, sleep trends, biometric intervals, and temperature control."
+    },
+    "e-trade": {
+      "kind": "package",
+      "packageName": "@api-emulator/e-trade",
+      "specifier": "./@e-trade/api-emulator.mjs",
+      "description": "E*TRADE provides brokerage APIs for OAuth 1.0a authorization, accounts, balances, portfolios, market quotes, orders, and order previews."
+    },
+    "ebay-seller": {
+      "kind": "package",
+      "packageName": "@api-emulator/ebay-seller",
+      "specifier": "./@ebay-seller/api-emulator.mjs",
+      "description": "eBay Seller APIs provide OAuth, inventory item, offer, and marketplace selling workflows."
+    },
+    "ethos": {
+      "kind": "package",
+      "packageName": "@api-emulator/ethos",
+      "specifier": "./@ethos/api-emulator.mjs",
+      "description": "Ethos-style life insurance APIs provide partner lead intake, term-life quotes, application decisions, and policy workflows."
+    },
+    "elevenlabs": {
+      "kind": "package",
+      "packageName": "@api-emulator/elevenlabs",
+      "specifier": "./@elevenlabs/api-emulator.mjs",
+      "description": "ElevenLabs provides voice AI APIs for text-to-speech, voices, models, generated audio history, and user subscription metadata."
     },
     "exa": {
       "kind": "package",
@@ -78,11 +276,53 @@
       "specifier": "./@exa/api-emulator.mjs",
       "description": "Exa provides neural search, contents, similar-link discovery, and answer APIs for AI agent retrieval workflows."
     },
+    "facebook-messenger": {
+      "kind": "package",
+      "packageName": "@api-emulator/facebook-messenger",
+      "specifier": "./@facebook-messenger/api-emulator.mjs",
+      "description": "Facebook Messenger Platform provides Graph API surfaces for pages, conversations, Send API messages, user profiles, and webhooks."
+    },
+    "figma": {
+      "kind": "package",
+      "packageName": "@api-emulator/figma",
+      "specifier": "./@figma/api-emulator.mjs",
+      "description": "Figma provides REST APIs for user identity, design files, image rendering, comments, teams, and collaboration workflows."
+    },
+    "fidelity": {
+      "kind": "package",
+      "packageName": "@api-emulator/fidelity",
+      "specifier": "./@fidelity/api-emulator.mjs",
+      "description": "Fidelity WorkplaceXchange provides workplace participant, retirement, stock-plan, HSA balance, and pay statement APIs."
+    },
+    "flightradar24": {
+      "kind": "package",
+      "packageName": "@api-emulator/flightradar24",
+      "specifier": "./@flightradar24/api-emulator.mjs",
+      "description": "Flightradar24 API provides live and historic flight positions, airport and airline lookup, flight summary, and track workflows."
+    },
+    "fireworks": {
+      "kind": "package",
+      "packageName": "@api-emulator/fireworks",
+      "specifier": "./@fireworks/api-emulator.mjs",
+      "description": "Fireworks AI provides OpenAI-compatible inference APIs for model listing, chat completions, completions, and embeddings."
+    },
+    "geico": {
+      "kind": "package",
+      "packageName": "@api-emulator/geico",
+      "specifier": "./@geico/api-emulator.mjs",
+      "description": "GEICO-style P&C insurance APIs provide customer, auto policy, claim, billing, and quote workflows."
+    },
     "github": {
       "kind": "package",
       "packageName": "@api-emulator/github",
       "specifier": "./@github/api-emulator/src/index.ts",
       "description": "GitHub provides source hosting, repositories, issues, pull requests, Actions, checks, and git data."
+    },
+    "gong": {
+      "kind": "package",
+      "packageName": "@api-emulator/gong",
+      "specifier": "./@gong/api-emulator.mjs",
+      "description": "Gong provides conversation intelligence APIs for users, recorded calls, transcripts, and CRM activity exports."
     },
     "google": {
       "kind": "package",
@@ -90,11 +330,59 @@
       "specifier": "./@google/api-emulator/src/index.ts",
       "description": "Google provides OAuth and Workspace APIs for Gmail, Drive, Calendar, Docs, Sheets, and admin workflows."
     },
+    "google-analytics": {
+      "kind": "package",
+      "packageName": "@api-emulator/google-analytics",
+      "specifier": "./@google-analytics/api-emulator.mjs",
+      "description": "Google Analytics Data API provides GA4 property metadata, report execution, realtime metrics, and audience export workflows."
+    },
+    "google-classroom": {
+      "kind": "package",
+      "packageName": "@api-emulator/google-classroom",
+      "specifier": "./@google-classroom/api-emulator.mjs",
+      "description": "Google Classroom provides course, roster, teacher, student, and coursework APIs for education workflows."
+    },
+    "google-flights": {
+      "kind": "package",
+      "packageName": "@api-emulator/google-flights",
+      "specifier": "./@google-flights/api-emulator.mjs",
+      "description": "Google Flights-style APIs provide deterministic airport search, flight offer search, and price insight responses for travel workflows."
+    },
     "google-play": {
       "kind": "package",
       "packageName": "@api-emulator/google-play",
       "specifier": "./@google-play/api-emulator.mjs",
       "description": "Google Play provides Android Publisher and Play Developer Reporting APIs for tracks, reviews, products, subscriptions, and vitals."
+    },
+    "goodreads": {
+      "kind": "package",
+      "packageName": "@api-emulator/goodreads",
+      "specifier": "./@goodreads/api-emulator.mjs",
+      "description": "Goodreads provides historical XML APIs for book search, book details, authors, and user review lists."
+    },
+    "grafana": {
+      "kind": "package",
+      "packageName": "@api-emulator/grafana",
+      "specifier": "./@grafana/api-emulator.mjs",
+      "description": "Grafana provides observability dashboard APIs for organizations, datasources, folders, dashboard search, and dashboard management."
+    },
+    "granola": {
+      "kind": "package",
+      "packageName": "@api-emulator/granola",
+      "specifier": "./@granola/api-emulator.mjs",
+      "description": "Granola provides programmatic access to meeting notes, transcripts, participants, and summaries."
+    },
+    "greptile": {
+      "kind": "package",
+      "packageName": "@api-emulator/greptile",
+      "specifier": "./@greptile/api-emulator.mjs",
+      "description": "Greptile provides AI codebase indexing, semantic search, and repository question-answering APIs."
+    },
+    "gusto": {
+      "kind": "package",
+      "packageName": "@api-emulator/gusto",
+      "specifier": "./@gusto/api-emulator.mjs",
+      "description": "Gusto provides payroll and HR APIs for companies, employees, contractors, payrolls, benefits, and onboarding."
     },
     "hubspot": {
       "kind": "package",
@@ -102,11 +390,89 @@
       "specifier": "./@hubspot/api-emulator.mjs",
       "description": "HubSpot provides CRM and developer APIs for accounts, contacts, companies, deals, properties, CMS tables, files, and secrets."
     },
-    "oculus": {
+    "huggingface": {
       "kind": "package",
-      "packageName": "@api-emulator/oculus",
-      "specifier": "./@oculus/api-emulator.mjs",
-      "description": "Oculus and Meta Horizon provide Graph API surfaces for app builds, release channels, redists, and platform utility workflows."
+      "packageName": "@api-emulator/huggingface",
+      "specifier": "./@huggingface/api-emulator.mjs",
+      "description": "Hugging Face provides Hub APIs for users, models, datasets, Spaces, repository metadata, files, OAuth, and repo creation workflows."
+    },
+    "intercom": {
+      "kind": "package",
+      "packageName": "@api-emulator/intercom",
+      "specifier": "./@intercom/api-emulator.mjs",
+      "description": "Intercom provides customer-support APIs for admins, contacts, conversations, replies, and inbox workflows."
+    },
+    "interactive-brokers": {
+      "kind": "package",
+      "packageName": "@api-emulator/interactive-brokers",
+      "specifier": "./@interactive-brokers/api-emulator.mjs",
+      "description": "Interactive Brokers Client Portal Web API provides session, accounts, portfolio, market data, contract search, and order workflows."
+    },
+    "intuit": {
+      "kind": "package",
+      "packageName": "@api-emulator/intuit",
+      "specifier": "./@intuit/api-emulator.mjs",
+      "description": "Intuit QuickBooks Online provides accounting APIs for OAuth, company info, query, customers, invoices, payments, and accounts."
+    },
+    "docusign": {
+      "kind": "package",
+      "packageName": "@api-emulator/docusign",
+      "specifier": "./@docusign/api-emulator.mjs",
+      "description": "Docusign provides eSignature APIs for OAuth userinfo, users, templates, envelopes, recipients, and Connect webhooks."
+    },
+    "duke-energy": {
+      "kind": "package",
+      "packageName": "@api-emulator/duke-energy",
+      "specifier": "./@duke-energy/api-emulator.mjs",
+      "description": "Duke Energy customer APIs provide Auth0 token exchange, account lists, account details, balances, meters, and usage graph workflows."
+    },
+    "hashicorp-vault": {
+      "kind": "package",
+      "packageName": "@api-emulator/hashicorp-vault",
+      "specifier": "./@hashicorp-vault/api-emulator.mjs",
+      "description": "HashiCorp Vault provides secrets-management APIs for health checks, mounts, and KV v2 secret read/write/list workflows."
+    },
+    "harvey": {
+      "kind": "package",
+      "packageName": "@api-emulator/harvey",
+      "specifier": "./@harvey/api-emulator.mjs",
+      "description": "Harvey provides legal AI APIs for vault projects, documents, search, and legal-grade completions."
+    },
+    "jira": {
+      "kind": "package",
+      "packageName": "@api-emulator/jira",
+      "specifier": "./@jira/api-emulator.mjs",
+      "description": "Jira provides issue tracking APIs for users, projects, issues, search, and workflow-oriented project management."
+    },
+    "joinwarp-payroll": {
+      "kind": "package",
+      "packageName": "@api-emulator/joinwarp-payroll",
+      "specifier": "./@joinwarp-payroll/api-emulator.mjs",
+      "description": "JoinWarp Payroll provides workforce APIs for departments, workplaces, workers, invitations, and time-off records."
+    },
+    "legalzoom": {
+      "kind": "package",
+      "packageName": "@api-emulator/legalzoom",
+      "specifier": "./@legalzoom/api-emulator.mjs",
+      "description": "LegalZoom provides legal-services workflows for customers, products, orders, business formations, and generated documents."
+    },
+    "lemonade": {
+      "kind": "package",
+      "packageName": "@api-emulator/lemonade",
+      "specifier": "./@lemonade/api-emulator.mjs",
+      "description": "Lemonade-style insurance APIs provide customer, renters quote, policy binding, and claim workflows."
+    },
+    "legora": {
+      "kind": "package",
+      "packageName": "@api-emulator/legora",
+      "specifier": "./@legora/api-emulator.mjs",
+      "description": "Legora provides legal workspace APIs for matters, documents, workflows, review tables, and AI completions."
+    },
+    "lexis": {
+      "kind": "package",
+      "packageName": "@api-emulator/lexis",
+      "specifier": "./@lexis/api-emulator.mjs",
+      "description": "Lexis provides legal research APIs for sources, search, documents, folders, and Web Services API-compatible aliases."
     },
     "linear": {
       "kind": "package",
@@ -114,23 +480,71 @@
       "specifier": "./@linear/api-emulator/src/index.ts",
       "description": "Linear provides issue tracking, teams, projects, cycles, workflow states, and product planning APIs."
     },
+    "linkedin": {
+      "kind": "package",
+      "packageName": "@api-emulator/linkedin",
+      "specifier": "./@linkedin/api-emulator.mjs",
+      "description": "LinkedIn provides profile, organization, posting, advertising, analytics, and OAuth APIs for professional network workflows."
+    },
+    "lucent": {
+      "kind": "package",
+      "packageName": "@api-emulator/lucent",
+      "specifier": "./@lucent/api-emulator.mjs",
+      "description": "Lucent provides session replay SDK APIs for public-key validation, browser replay ingestion, and session capture workflows."
+    },
+    "mercury": {
+      "kind": "package",
+      "packageName": "@api-emulator/mercury",
+      "specifier": "./@mercury/api-emulator.mjs",
+      "description": "Mercury provides banking APIs for accounts, transactions, recipients, and payment approval workflows."
+    },
     "microsoft": {
       "kind": "package",
       "packageName": "@api-emulator/microsoft",
       "specifier": "./@microsoft/api-emulator/src/index.ts",
       "description": "Microsoft provides identity, tenant, user, and productivity APIs through Microsoft Graph-style surfaces."
     },
-    "mongoatlas": {
+    "mintlify": {
       "kind": "package",
-      "packageName": "@api-emulator/mongoatlas",
-      "specifier": "./@mongoatlas/api-emulator/src/index.ts",
-      "description": "MongoDB Atlas provides managed database projects, clusters, admin APIs, and data access surfaces."
+      "packageName": "@api-emulator/mintlify",
+      "specifier": "./@mintlify/api-emulator.mjs",
+      "description": "Mintlify provides documentation deployment, preview, assistant, search, page content, and analytics APIs."
     },
     "mixpanel": {
       "kind": "package",
       "packageName": "@api-emulator/mixpanel",
       "specifier": "./@mixpanel/api-emulator.mjs",
       "description": "Mixpanel provides product analytics APIs for event ingestion, user profiles, exports, and reporting."
+    },
+    "mobbin": {
+      "kind": "package",
+      "packageName": "@api-emulator/mobbin",
+      "specifier": "./@mobbin/api-emulator.mjs",
+      "description": "Mobbin provides MCP and Screens Search APIs for discovering mobile and web design reference screens."
+    },
+    "modal": {
+      "kind": "package",
+      "packageName": "@api-emulator/modal",
+      "specifier": "./@modal/api-emulator.mjs",
+      "description": "Modal provides serverless Python compute control-plane APIs for apps, environments, secrets, volumes, workspaces, and tokens."
+    },
+    "marketo": {
+      "kind": "package",
+      "packageName": "@api-emulator/marketo",
+      "specifier": "./@marketo/api-emulator.mjs",
+      "description": "Adobe Marketo Engage provides REST APIs for OAuth, leads, lead upserts, programs, lists, and marketing assets."
+    },
+    "metlife": {
+      "kind": "package",
+      "packageName": "@api-emulator/metlife",
+      "specifier": "./@metlife/api-emulator.mjs",
+      "description": "MetLife APIs provide needs analysis, product recommendation, quote illustration, and life application submission workflows."
+    },
+    "mongoatlas": {
+      "kind": "package",
+      "packageName": "@api-emulator/mongoatlas",
+      "specifier": "./@mongoatlas/api-emulator/src/index.ts",
+      "description": "MongoDB Atlas provides managed database projects, clusters, admin APIs, and data access surfaces."
     },
     "neon": {
       "kind": "package",
@@ -144,23 +558,47 @@
       "specifier": "./@netlify/api-emulator.mjs",
       "description": "Netlify provides web hosting APIs for sites, deploys, builds, environment variables, and domains."
     },
+    "nextdoor": {
+      "kind": "package",
+      "packageName": "@api-emulator/nextdoor",
+      "specifier": "./@nextdoor/api-emulator.mjs",
+      "description": "Nextdoor provides neighborhood social APIs for member profiles, publishing posts, and local search workflows."
+    },
+    "nytimes": {
+      "kind": "package",
+      "packageName": "@api-emulator/nytimes",
+      "specifier": "./@nytimes/api-emulator.mjs",
+      "description": "The New York Times APIs provide article search, archive, top stories, books, and public content datasets."
+    },
+    "oculus": {
+      "kind": "package",
+      "packageName": "@api-emulator/oculus",
+      "specifier": "./@oculus/api-emulator.mjs",
+      "description": "Oculus and Meta Horizon provide Graph API surfaces for app builds, release channels, redists, and platform utility workflows."
+    },
+    "oura": {
+      "kind": "package",
+      "packageName": "@api-emulator/oura",
+      "specifier": "./@oura/api-emulator.mjs",
+      "description": "Oura Ring provides health APIs for personal info, daily sleep, readiness, activity, workouts, and heart-rate data."
+    },
     "okta": {
       "kind": "package",
       "packageName": "@api-emulator/okta",
       "specifier": "./@okta/api-emulator/src/index.ts",
       "description": "Okta provides identity APIs for OAuth, users, groups, apps, sessions, and identity providers."
     },
-    "posthog": {
+    "paypal": {
       "kind": "package",
-      "packageName": "@api-emulator/posthog",
-      "specifier": "./@posthog/api-emulator.mjs",
-      "description": "PostHog provides product analytics, event capture, feature flags, persons, and project APIs."
+      "packageName": "@api-emulator/paypal",
+      "specifier": "./@paypal/api-emulator.mjs",
+      "description": "PayPal provides payments APIs for OAuth, checkout orders, captures, refunds, webhooks, and transaction workflows."
     },
-    "planetscale": {
+    "patreon": {
       "kind": "package",
-      "packageName": "@api-emulator/planetscale",
-      "specifier": "./@planetscale/api-emulator.mjs",
-      "description": "PlanetScale provides MySQL database branching, organizations, deploy requests, passwords, and workflows."
+      "packageName": "@api-emulator/patreon",
+      "specifier": "./@patreon/api-emulator.mjs",
+      "description": "Patreon API v2 provides JSON:API resources for OAuth, identity, campaigns, members, posts, and webhooks."
     },
     "piratebay": {
       "kind": "package",
@@ -168,11 +606,83 @@
       "specifier": "./@piratebay/api-emulator.mjs",
       "description": "Pirate Bay provides generic media index fixtures for search, item metadata, playback, and library-style workflows."
     },
+    "pinterest": {
+      "kind": "package",
+      "packageName": "@api-emulator/pinterest",
+      "specifier": "./@pinterest/api-emulator.mjs",
+      "description": "Pinterest REST API v5 provides user account, board, and pin creation/listing workflows."
+    },
+    "prime-music": {
+      "kind": "package",
+      "packageName": "@api-emulator/prime-music",
+      "specifier": "./@prime-music/api-emulator.mjs",
+      "description": "Prime Music provides Amazon Music-compatible APIs for catalog search, tracks, albums, playlists, library saves, and playback controls."
+    },
+    "planetscale": {
+      "kind": "package",
+      "packageName": "@api-emulator/planetscale",
+      "specifier": "./@planetscale/api-emulator.mjs",
+      "description": "PlanetScale provides MySQL database branching, organizations, deploy requests, passwords, and workflows."
+    },
+    "posthog": {
+      "kind": "package",
+      "packageName": "@api-emulator/posthog",
+      "specifier": "./@posthog/api-emulator.mjs",
+      "description": "PostHog provides product analytics, event capture, feature flags, persons, and project APIs."
+    },
+    "postbridge": {
+      "kind": "package",
+      "packageName": "@api-emulator/postbridge",
+      "specifier": "./@postbridge/api-emulator.mjs",
+      "description": "Post Bridge provides social media scheduling APIs for connected accounts, draft posts, scheduled posts, and publishing."
+    },
+    "progressive": {
+      "kind": "package",
+      "packageName": "@api-emulator/progressive",
+      "specifier": "./@progressive/api-emulator.mjs",
+      "description": "Progressive-style insurance APIs provide auto quotes, policy servicing, customer, and claim workflows."
+    },
     "privy": {
       "kind": "package",
       "packageName": "@api-emulator/privy",
       "specifier": "./@privy/api-emulator.mjs",
       "description": "Privy provides embedded wallets, authentication, user identity, and authorization for crypto apps."
+    },
+    "ramp": {
+      "kind": "package",
+      "packageName": "@api-emulator/ramp",
+      "specifier": "./@ramp/api-emulator.mjs",
+      "description": "Ramp provides finance APIs for entities, users, corporate cards, transactions, reimbursements, bills, and spend controls."
+    },
+    "quizlet": {
+      "kind": "package",
+      "packageName": "@api-emulator/quizlet",
+      "specifier": "./@quizlet/api-emulator.mjs",
+      "description": "Quizlet API 2.0 provides education APIs for users, study sets, terms, and flashcard creation workflows."
+    },
+    "reddit": {
+      "kind": "package",
+      "packageName": "@api-emulator/reddit",
+      "specifier": "./@reddit/api-emulator.mjs",
+      "description": "Reddit provides OAuth, identity, subreddit, listing, post submission, and comment APIs."
+    },
+    "replit": {
+      "kind": "package",
+      "packageName": "@api-emulator/replit",
+      "specifier": "./@replit/api-emulator.mjs",
+      "description": "Replit provides extension Data API and GraphQL surfaces for users, Repls, and extension public key workflows."
+    },
+    "retool": {
+      "kind": "package",
+      "packageName": "@api-emulator/retool",
+      "specifier": "./@retool/api-emulator.mjs",
+      "description": "Retool provides organization APIs for users, groups, folders, apps, resources, source control, and permissions."
+    },
+    "rentahuman": {
+      "kind": "package",
+      "packageName": "@api-emulator/rentahuman",
+      "specifier": "./@rentahuman/api-emulator.mjs",
+      "description": "RentAHuman provides REST and MCP APIs for agents, humans, bookings, bounties, applications, escrow, conversations, transfers, wallet operations, services, API keys, reviews, and webhooks."
     },
     "resend": {
       "kind": "package",
@@ -180,17 +690,83 @@
       "specifier": "./@resend/api-emulator/src/index.ts",
       "description": "Resend provides developer email APIs for sending messages, domains, contacts, audiences, and broadcasts."
     },
+    "rippling": {
+      "kind": "package",
+      "packageName": "@api-emulator/rippling",
+      "specifier": "./@rippling/api-emulator.mjs",
+      "description": "Rippling provides workforce platform APIs for employees, groups, departments, devices, payroll, and identity data."
+    },
+    "robinhood": {
+      "kind": "package",
+      "packageName": "@api-emulator/robinhood",
+      "specifier": "./@robinhood/api-emulator.mjs",
+      "description": "Robinhood Crypto Trading APIs provide account, holding, order, currency pair, and market data workflows."
+    },
     "salesforce": {
       "kind": "package",
       "packageName": "@api-emulator/salesforce",
       "specifier": "./@salesforce/api-emulator.mjs",
       "description": "Salesforce provides CRM APIs for org identity, SOQL queries, object metadata, and sObject record workflows."
     },
+    "schwab": {
+      "kind": "package",
+      "packageName": "@api-emulator/schwab",
+      "specifier": "./@schwab/api-emulator.mjs",
+      "description": "Charles Schwab Trader API provides OAuth, brokerage accounts, account hashes, orders, quotes, and option chain data."
+    },
+    "samsara": {
+      "kind": "package",
+      "packageName": "@api-emulator/samsara",
+      "specifier": "./@samsara/api-emulator.mjs",
+      "description": "Samsara provides connected operations APIs for fleets, vehicles, drivers, routes, sensors, safety, and telematics."
+    },
     "sentry": {
       "kind": "package",
       "packageName": "@api-emulator/sentry",
       "specifier": "./@sentry/api-emulator.mjs",
       "description": "Sentry provides error tracking, projects, issues, events, releases, organizations, and alerting APIs."
+    },
+    "servicenow": {
+      "kind": "package",
+      "packageName": "@api-emulator/servicenow",
+      "specifier": "./@servicenow/api-emulator.mjs",
+      "description": "ServiceNow provides customer-support and ITSM APIs for Table API incidents, users, groups, and workflow records."
+    },
+    "shipstation": {
+      "kind": "package",
+      "packageName": "@api-emulator/shipstation",
+      "specifier": "./@shipstation/api-emulator.mjs",
+      "description": "ShipStation provides shipping APIs for shipments, rates, labels, tracking, and fulfillment workflows."
+    },
+    "shopify": {
+      "kind": "package",
+      "packageName": "@api-emulator/shopify",
+      "specifier": "./@shopify/api-emulator.mjs",
+      "description": "Shopify Admin APIs provide shop, products, orders, inventory, customers, and GraphQL commerce workflows."
+    },
+    "sierra": {
+      "kind": "package",
+      "packageName": "@api-emulator/sierra",
+      "specifier": "./@sierra/api-emulator.mjs",
+      "description": "Sierra provides AI customer-service agent SDK surfaces for mobile chat embeds, voice SVP transport probes, and conversation fixtures."
+    },
+    "shazam": {
+      "kind": "package",
+      "packageName": "@api-emulator/shazam",
+      "specifier": "./@shazam/api-emulator.mjs",
+      "description": "Shazam provides recognition, song metadata, chart, search, and Apple Music link workflows."
+    },
+    "siriusxm": {
+      "kind": "package",
+      "packageName": "@api-emulator/siriusxm",
+      "specifier": "./@siriusxm/api-emulator.mjs",
+      "description": "SiriusXM provides channel lineup, now-playing metadata, recent track, profile, and favorite channel workflows."
+    },
+    "skyscanner": {
+      "kind": "package",
+      "packageName": "@api-emulator/skyscanner",
+      "specifier": "./@skyscanner/api-emulator.mjs",
+      "description": "Skyscanner Travel APIs provide flights live search sessions, itinerary pricing, and refresh polling workflows."
     },
     "slack": {
       "kind": "package",
@@ -204,17 +780,71 @@
       "specifier": "./@snap/api-emulator.mjs",
       "description": "Snap Ads provides Marketing API surfaces for OAuth, organizations, ad accounts, campaigns, ads, and reporting."
     },
+    "sourcegraph": {
+      "kind": "package",
+      "packageName": "@api-emulator/sourcegraph",
+      "specifier": "./@sourcegraph/api-emulator.mjs",
+      "description": "Sourcegraph provides code search, GraphQL, Cody context, and LLM model APIs for developer tooling workflows."
+    },
+    "spotify": {
+      "kind": "package",
+      "packageName": "@api-emulator/spotify",
+      "specifier": "./@spotify/api-emulator.mjs",
+      "description": "Spotify provides Web API surfaces for catalog search, tracks, albums, artists, playlists, saved library, player controls, and queue workflows."
+    },
+    "spectrum": {
+      "kind": "package",
+      "packageName": "@api-emulator/spectrum",
+      "specifier": "./@spectrum/api-emulator.mjs",
+      "description": "Spectrum Enterprise ticketing APIs provide OAuth tokens, sites, circuits, tickets, notes, and attachments for B2B support workflows."
+    },
+    "statefarm": {
+      "kind": "package",
+      "packageName": "@api-emulator/statefarm",
+      "specifier": "./@statefarm/api-emulator.mjs",
+      "description": "State Farm-style insurance APIs provide renters quote, policy, claim, billing, and customer workflows."
+    },
+    "stainless": {
+      "kind": "package",
+      "packageName": "@api-emulator/stainless",
+      "specifier": "./@stainless/api-emulator.mjs",
+      "description": "Stainless provides SDK generation APIs for projects, branches, configs, builds, diagnostics, and generated target outputs."
+    },
+    "steam": {
+      "kind": "package",
+      "packageName": "@api-emulator/steam",
+      "specifier": "./@steam/api-emulator.mjs",
+      "description": "Steam Web API provides player summaries, owned games, achievements, news, and community data."
+    },
     "stripe": {
       "kind": "package",
       "packageName": "@api-emulator/stripe",
       "specifier": "./@stripe/api-emulator/src/index.ts",
       "description": "Stripe provides payments and billing APIs for customers, checkout, payment intents, invoices, and subscriptions."
     },
+    "substack": {
+      "kind": "package",
+      "packageName": "@api-emulator/substack",
+      "specifier": "./@substack/api-emulator.mjs",
+      "description": "Substack-compatible APIs provide publication metadata, newsletter posts, drafts, and subscribers."
+    },
     "supabase": {
       "kind": "package",
       "packageName": "@api-emulator/supabase",
       "specifier": "./@supabase/api-emulator.mjs",
       "description": "Supabase provides backend APIs for Postgres projects, auth, storage, edge functions, and database workflows."
+    },
+    "suno": {
+      "kind": "package",
+      "packageName": "@api-emulator/suno",
+      "specifier": "./@suno/api-emulator.mjs",
+      "description": "SunoAPI-compatible APIs provide credits, asynchronous music generation tasks, record polling, and lyrics generation workflows."
+    },
+    "symbolab": {
+      "kind": "package",
+      "packageName": "@api-emulator/symbolab",
+      "specifier": "./@symbolab/api-emulator.mjs",
+      "description": "Symbolab public web bridge APIs provide equation solution, steps, answer verification, and graph plotting workflows."
     },
     "telegram": {
       "kind": "package",
@@ -228,11 +858,17 @@
       "specifier": "./@tiktok/api-emulator.mjs",
       "description": "TikTok Ads provides Business API surfaces for advertisers, campaigns, ad groups, ads, creatives, audiences, pixels, and reports."
     },
-    "twilio": {
+    "truemed": {
       "kind": "package",
-      "packageName": "@api-emulator/twilio",
-      "specifier": "./@twilio/api-emulator/src/index.ts",
-      "description": "Twilio provides communications APIs for messaging, phone numbers, verification, voice, and customer engagement."
+      "packageName": "@api-emulator/truemed",
+      "specifier": "./@truemed/api-emulator.mjs",
+      "description": "Truemed provides HSA/FSA payment APIs for checkout sessions, payment tokens, qualification sessions, product catalog eligibility, captures, voids, and refunds."
+    },
+    "turbotax": {
+      "kind": "package",
+      "packageName": "@api-emulator/turbotax",
+      "specifier": "./@turbotax/api-emulator.mjs",
+      "description": "TurboTax partner tax-import APIs provide OAuth, tax document, and import session workflows for deterministic tax prep testing."
     },
     "tryprofound": {
       "kind": "package",
@@ -240,11 +876,47 @@
       "specifier": "./@tryprofound/api-emulator.mjs",
       "description": "TryProfound provides AI search analytics APIs for organizations, prompts, reports, agents, knowledge bases, and content optimization."
     },
+    "togetherai": {
+      "kind": "package",
+      "packageName": "@api-emulator/togetherai",
+      "specifier": "./@togetherai/api-emulator.mjs",
+      "description": "Together AI provides OpenAI-compatible inference, embedding, model listing, and reranking APIs."
+    },
+    "twilio": {
+      "kind": "package",
+      "packageName": "@api-emulator/twilio",
+      "specifier": "./@twilio/api-emulator/src/index.ts",
+      "description": "Twilio provides communications APIs for messaging, phone numbers, verification, voice, and customer engagement."
+    },
+    "uipath": {
+      "kind": "package",
+      "packageName": "@api-emulator/uipath",
+      "specifier": "./@uipath/api-emulator.mjs",
+      "description": "UiPath Orchestrator APIs provide OData workflows for folders, users, releases, jobs, queues, robots, and assets."
+    },
+    "uber": {
+      "kind": "package",
+      "packageName": "@api-emulator/uber",
+      "specifier": "./@uber/api-emulator.mjs",
+      "description": "Uber provides Rides, Direct, and Eats APIs for profiles, products, estimates, ride requests, history, payment methods, places, deliveries, stores, menus, orders, reports, and webhooks."
+    },
+    "unifygtm": {
+      "kind": "package",
+      "packageName": "@api-emulator/unifygtm",
+      "specifier": "./@unifygtm/api-emulator.mjs",
+      "description": "Unify GTM provides data APIs for GTM objects, attributes, records, enrichment, and workflow automation."
+    },
     "upstash": {
       "kind": "package",
       "packageName": "@api-emulator/upstash",
       "specifier": "./@upstash/api-emulator.mjs",
       "description": "Upstash provides serverless data and messaging APIs for Redis, QStash, Kafka-style streams, and workflows."
+    },
+    "usaa": {
+      "kind": "package",
+      "packageName": "@api-emulator/usaa",
+      "specifier": "./@usaa/api-emulator.mjs",
+      "description": "USAA-style Open Finance APIs provide FDX account, customer, balance, and transaction data workflows."
     },
     "vercel": {
       "kind": "package",
@@ -252,11 +924,65 @@
       "specifier": "./@vercel/api-emulator/src/index.ts",
       "description": "Vercel provides deployment platform APIs for projects, builds, domains, environment variables, teams, and accounts."
     },
+    "weatherkit": {
+      "kind": "package",
+      "packageName": "@api-emulator/weatherkit",
+      "specifier": "./@weatherkit/api-emulator.mjs",
+      "description": "Apple WeatherKit REST API provides availability, current weather, forecasts, and weather alerts."
+    },
     "whatsapp": {
       "kind": "package",
       "packageName": "@api-emulator/whatsapp",
       "specifier": "./@whatsapp/api-emulator.mjs",
       "description": "WhatsApp Cloud API provides Graph API surfaces for business phone numbers, messages, media, templates, and webhooks."
+    },
+    "whoop": {
+      "kind": "package",
+      "packageName": "@api-emulator/whoop",
+      "specifier": "./@whoop/api-emulator.mjs",
+      "description": "WHOOP provides health APIs for athlete profiles, body measurements, cycles, recovery, sleep, and workouts."
+    },
+    "wolfram": {
+      "kind": "package",
+      "packageName": "@api-emulator/wolfram",
+      "specifier": "./@wolfram/api-emulator.mjs",
+      "description": "Wolfram APIs provide short answers, full query results, spoken results, and LLM-ready computational answers."
+    },
+    "workday": {
+      "kind": "package",
+      "packageName": "@api-emulator/workday",
+      "specifier": "./@workday/api-emulator.mjs",
+      "description": "Workday provides enterprise HR, finance, and planning APIs for workers, organizations, jobs, reports, and business processes."
+    },
+    "workato": {
+      "kind": "package",
+      "packageName": "@api-emulator/workato",
+      "specifier": "./@workato/api-emulator.mjs",
+      "description": "Workato provides automation APIs for recipes, connections, folders, jobs, and manifest export workflows."
+    },
+    "x": {
+      "kind": "package",
+      "packageName": "@api-emulator/x",
+      "specifier": "./@x/api-emulator.mjs",
+      "description": "X API provides OAuth, users, tweets, timelines, and social publishing workflows."
+    },
+    "youtube": {
+      "kind": "package",
+      "packageName": "@api-emulator/youtube",
+      "specifier": "./@youtube/api-emulator.mjs",
+      "description": "YouTube provides Data API, Upload API, and Analytics API surfaces for creator posting, video management, comments, playlists, reports, and groups."
+    },
+    "youtube-music": {
+      "kind": "package",
+      "packageName": "@api-emulator/youtube-music",
+      "specifier": "./@youtube-music/api-emulator.mjs",
+      "description": "YouTube Music provides InnerTube-style APIs for search, browse, playback metadata, queues, playlists, likes, and subscriptions."
+    },
+    "zapier": {
+      "kind": "package",
+      "packageName": "@api-emulator/zapier",
+      "specifier": "./@zapier/api-emulator.mjs",
+      "description": "Zapier provides automation APIs for apps, Zaps, task history, and webhook trigger workflows."
     }
   }
 }

@@ -1,26 +1,26 @@
 import {
-  capabilities as appleCapabilities,
+  ascCapabilities,
+  ascPlugin,
   getASCStore,
-  plugin as applePlugin,
-  seedFromConfig as seedAppleFromConfig,
+  seedFromConfig as seedASCFromConfig,
 } from '../@apple/api-emulator.mjs';
 
 export const contract = {
   provider: 'app-store-connect',
   source: 'App Store Connect API JSON:API conventions',
   docs: 'https://developer.apple.com/documentation/appstoreconnectapi',
-  scope: appleCapabilities.filter((capability) => capability.startsWith('asc-')),
+  scope: ascCapabilities,
   fidelity: 'resource-model-subset',
 };
 
 export const plugin = {
   name: 'app-store-connect',
-  register: applePlugin.register,
-  seed: applePlugin.seed,
+  register: ascPlugin.register,
+  seed: ascPlugin.seed,
 };
 
 export function seedFromConfig(store, baseUrl, config = {}) {
-  seedAppleFromConfig(store, baseUrl, config);
+  seedASCFromConfig(store, baseUrl, config);
 }
 
 export const label = 'App Store Connect API emulator';

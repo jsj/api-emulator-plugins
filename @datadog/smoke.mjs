@@ -1,0 +1,47 @@
+import assert from 'node:assert/strict';
+import { plugin } from './api-emulator.mjs';
+
+const routes = [];
+const app = {
+  get: (path, handler) => routes.push({ method: 'GET', path, handler }),
+  post: (path, handler) => routes.push({ method: 'POST', path, handler }),
+  put: (path, handler) => routes.push({ method: 'PUT', path, handler }),
+  patch: (path, handler) => routes.push({ method: 'PATCH', path, handler }),
+  delete: (path, handler) => routes.push({ method: 'DELETE', path, handler }),
+};
+const store = { data: new Map(), getData(key) { return this.data.get(key); }, setData(key, value) { this.data.set(key, value); } };
+plugin.register(app, store);
+
+function match(routePath, requestPath) {
+  const routeParts = routePath.split('/').filter(Boolean);
+  const requestParts = requestPath.split('/').filter(Boolean);
+  if (routeParts.length !== requestParts.length) return null;
+  const params = {};
+  for (let i = 0; i < routeParts.length; i += 1) {
+    if (routeParts[i].startsWith(':')) params[routeParts[i].slice(1)] = decodeURIComponent(requestParts[i]);
+    else if (routeParts[i] !== requestParts[i]) return null;
+  }
+  return params;
+}
+
+async function request(method, path, body) {
+  const url = new URL(path, 'http://127.0.0.1');
+  const route = routes.find((item) => item.method === method && match(item.path, url.pathname));
+  assert.ok(route, `${method} ${path} route should exist`);
+  const params = match(route.path, url.pathname);
+  let status = 200; let payload;
+  await route.handler({
+    req: { url: url.toString(), param: (name) => params[name], query: (name) => url.searchParams.get(name) ?? undefined, json: async () => body ?? {} },
+    json: (value, nextStatus = 200) => { status = nextStatus; payload = value; return { status, payload }; },
+  });
+  return { status, payload };
+}
+
+const valid = await request('GET', '/api/v1/validate');
+assert.equal(valid.payload.valid, true);
+const hosts = await request('GET', '/api/v1/hosts');
+assert.equal(hosts.payload.host_list[0].name, 'emulator-host');
+const monitor = await request('POST', '/api/v1/monitor', { name: 'Smoke monitor', type: 'metric alert', query: 'avg:emulator.requests{*} > 1' });
+assert.equal(monitor.status, 201);
+
+console.log('datadog smoke ok');

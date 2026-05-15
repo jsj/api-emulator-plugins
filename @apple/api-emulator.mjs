@@ -1,15 +1,4 @@
-// ../api-emulator-plugins/@apple/api-emulator/src/store.ts
-function getASCStore(store) {
-  return {
-    apps: store.collection("asc.apps", ["asc_id", "bundle_id"]),
-    builds: store.collection("asc.builds", ["asc_id", "app_id"]),
-    versions: store.collection("asc.versions", ["asc_id", "app_id"]),
-    reviewSubmissions: store.collection("asc.review_submissions", ["asc_id", "app_id"]),
-    localizations: store.collection("asc.localizations", ["asc_id", "version_id"])
-  };
-}
-
-// ../api-emulator-plugins/@apple/api-emulator/src/jsonapi.ts
+// src/jsonapi.ts
 import { randomBytes } from "crypto";
 function ascId() {
   return randomBytes(8).toString("hex");
@@ -69,7 +58,693 @@ async function parseJsonApiBody(c) {
   };
 }
 
-// ../api-emulator-plugins/@apple/api-emulator/src/routes/review-submissions.ts
+// src/routes/auth.ts
+function getUsers(store) {
+  return store.getData("asc.users") ?? [];
+}
+function now() {
+  return (/* @__PURE__ */ new Date()).toISOString();
+}
+function getOAuthClients(store) {
+  return store.getData("apple.oauth.clients") ?? [
+    { client_id: "com.example.app", redirect_uris: ["https://example.com/callback", "http://localhost/callback"] }
+  ];
+}
+function base64Url(input) {
+  return Buffer.from(JSON.stringify(input)).toString("base64url");
+}
+function idToken(clientId, subject = "apple-emulator-user") {
+  return [
+    base64Url({ alg: "RS256", kid: "apple-emulator-key", typ: "JWT" }),
+    base64Url({
+      iss: "https://appleid.apple.com",
+      aud: clientId,
+      exp: Math.floor(Date.now() / 1e3) + 3600,
+      iat: Math.floor(Date.now() / 1e3),
+      sub: subject,
+      email: "demo@apple-emulator.local",
+      email_verified: "true",
+      is_private_email: "false"
+    }),
+    "emulator-signature"
+  ].join(".");
+}
+function fakeSignedHeaders(body = {}) {
+  const request = body.request ?? {};
+  return {
+    headers: {
+      "X-Apple-MD": "fake-md",
+      "X-Apple-MD-M": "fake-md-m",
+      "X-Apple-MD-RINFO": "17106176",
+      "X-Apple-MD-LU": "fake-lu",
+      "X-VPhone-Apple-Emulator": "1"
+    },
+    mescalSignature: "fake-mescal-signature",
+    request: {
+      url: typeof request.url === "string" ? request.url : null,
+      method: typeof request.method === "string" ? request.method : null
+    },
+    issuedAt: now()
+  };
+}
+function appleIdentityRoutes({ app, store }) {
+  app.get("/bag.xml", (c) => c.json({
+    status: 0,
+    bag: {
+      profile: "AMSCore",
+      profileVersion: "1",
+      environment: "emulator"
+    },
+    issuedAt: now()
+  }));
+  app.post("/v1/signSapSetup", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    const response = fakeSignedHeaders(body);
+    store.setData("apple:last-sign-sap-setup", body);
+    store.setData("apple:last-sign-sap-setup-response", response);
+    return c.json(response);
+  });
+  app.post("/auth/signin", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    store.setData("apple:last-signin", body);
+    return c.json({
+      ok: true,
+      user: {
+        id: "apple-emulator-user",
+        email: "demo@apple-emulator.local"
+      },
+      token: "apple-emulator-token",
+      issuedAt: now()
+    });
+  });
+  app.get("/auth/authorize", (c) => {
+    const clientId = c.req.query("client_id") ?? "";
+    const redirectUri = c.req.query("redirect_uri") ?? "";
+    const responseMode = c.req.query("response_mode") ?? "query";
+    const state = c.req.query("state");
+    const clients = getOAuthClients(store);
+    const client = clients.find((item) => item.client_id === clientId);
+    if (client && redirectUri && !client.redirect_uris.includes(redirectUri)) {
+      return c.json({ error: "invalid_request", error_description: "redirect_uri is not registered" }, 400);
+    }
+    const code = `apple-code-${Math.random().toString(36).slice(2, 10)}`;
+    store.setData(`apple.oauth.code.${code}`, { client_id: clientId, redirect_uri: redirectUri, issued_at: now() });
+    if (!redirectUri) {
+      return c.json({ code, state: state ?? null, id_token: idToken(clientId || "com.example.app") });
+    }
+    const url = new URL(redirectUri);
+    url.searchParams.set("code", code);
+    if (state) url.searchParams.set("state", state);
+    if (responseMode === "form_post") {
+      return c.html(`<!doctype html><form method="post" action="${redirectUri}"><input name="code" value="${code}"><input name="state" value="${state ?? ""}"></form>`);
+    }
+    return c.redirect(url.toString(), 302);
+  });
+  app.post("/auth/token", async (c) => {
+    const contentType = c.req.header("content-type") ?? "";
+    const body = contentType.includes("application/json") ? await c.req.json().catch(() => ({})) : Object.fromEntries((await c.req.formData().catch(() => new FormData())).entries());
+    const grantType = String(body.grant_type ?? "authorization_code");
+    const clientId = String(body.client_id ?? "com.example.app");
+    const code = String(body.code ?? "");
+    if (grantType === "authorization_code" && code && !store.getData(`apple.oauth.code.${code}`)) {
+      return c.json({ error: "invalid_grant" }, 400);
+    }
+    return c.json({
+      access_token: `apple-access-${Math.random().toString(36).slice(2, 12)}`,
+      token_type: "Bearer",
+      expires_in: 3600,
+      refresh_token: `apple-refresh-${Math.random().toString(36).slice(2, 12)}`,
+      id_token: idToken(clientId)
+    });
+  });
+  app.post("/auth/revoke", async (c) => {
+    const body = await c.req.parseBody().catch(() => ({}));
+    store.setData("apple:last-revoked-token", body.token ?? null);
+    return c.body(null, 200);
+  });
+  app.get("/auth/keys", (c) => c.json({
+    keys: [
+      {
+        kty: "RSA",
+        kid: "apple-emulator-key",
+        use: "sig",
+        alg: "RS256",
+        n: "0vx7agoebGcQSuuPiLJXZptN27jA",
+        e: "AQAB"
+      }
+    ]
+  }));
+  app.get("/inspect/last-sign-sap-setup", (c) => c.json(store.getData("apple:last-sign-sap-setup") ?? null));
+  app.get("/inspect/last-sign-sap-setup-response", (c) => c.json(store.getData("apple:last-sign-sap-setup-response") ?? null));
+  app.get("/inspect/last-signin", (c) => c.json(store.getData("apple:last-signin") ?? null));
+}
+function ascUserRoutes({ app, store, baseUrl }) {
+  app.get("/v1/users", (c) => {
+    const users = getUsers(store);
+    const { cursor, limit } = parseCursor(c);
+    const page = users.slice(cursor, cursor + limit);
+    return c.json(
+      jsonApiList(
+        baseUrl,
+        "users",
+        page.map((u) => ({
+          id: u.id,
+          attributes: {
+            username: u.email,
+            firstName: u.first_name,
+            lastName: u.last_name,
+            email: u.email,
+            roles: u.roles
+          }
+        })),
+        cursor,
+        limit,
+        users.length
+      )
+    );
+  });
+  app.get("/v1/users/:id", (c) => {
+    const id = c.req.param("id");
+    const users = getUsers(store);
+    const user = users.find((u) => u.id === id);
+    if (!user) {
+      return c.json(jsonApiError(404, "NOT_FOUND", "Not Found", `User ${id} not found`), 404);
+    }
+    return c.json(
+      jsonApiResource(baseUrl, "users", user.id, {
+        username: user.email,
+        firstName: user.first_name,
+        lastName: user.last_name,
+        email: user.email,
+        roles: user.roles
+      })
+    );
+  });
+  app.get("/v1/ciProducts/:productId/additionalRepositories", (_c) => {
+    return _c.json({ data: [], links: { self: `${baseUrl}/v1/ciProducts` }, meta: { paging: { total: 0, limit: 50 } } });
+  });
+  app.get("/v1/userInvitations", (c) => {
+    return c.json(jsonApiList(baseUrl, "userInvitations", [], 0, 50, 0));
+  });
+}
+
+// src/routes/itunes.ts
+function getApps(store) {
+  return store.getData("itunes.apps") ?? [];
+}
+function searchApps(apps, term, limit) {
+  const lower = term.toLowerCase();
+  const matched = apps.filter(
+    (a) => a.trackName.toLowerCase().includes(lower) || a.bundleId.toLowerCase().includes(lower) || a.description.toLowerCase().includes(lower)
+  );
+  return matched.slice(0, limit);
+}
+function itunesResponse(results) {
+  return { resultCount: results.length, results };
+}
+function itunesRoutes({ app, store }) {
+  app.get("/search", (c) => {
+    const term = c.req.query("term") ?? "";
+    const limit = parseInt(c.req.query("limit") ?? "10", 10);
+    const results = searchApps(getApps(store), term, limit);
+    return c.json(itunesResponse(results));
+  });
+  app.get("/lookup", (c) => {
+    const id = c.req.query("id") ?? "";
+    const apps = getApps(store);
+    const found = apps.filter((a) => String(a.trackId) === id);
+    return c.json(itunesResponse(found));
+  });
+  app.get("/v1/app-store/search", (c) => {
+    const term = c.req.query("term") ?? "";
+    const limit = parseInt(c.req.query("limit") ?? "10", 10);
+    const results = searchApps(getApps(store), term, limit);
+    return c.json(itunesResponse(results));
+  });
+  app.get("/v1/app-store/lookup", (c) => {
+    const appId = c.req.query("appId") ?? "";
+    const apps = getApps(store);
+    const found = apps.filter((a) => String(a.trackId) === appId);
+    return c.json(itunesResponse(found));
+  });
+  app.get("/v1/app-store/storefront", (c) => {
+    const appId = c.req.query("appId") ?? "";
+    const apps = getApps(store);
+    const found = apps.find((a) => String(a.trackId) === appId);
+    if (!found || found.screenshotUrls.length === 0) {
+      return c.html("<html><body></body></html>");
+    }
+    const pictures = found.screenshotUrls.map((url) => `<picture><source srcset="${url} 460w"></picture>`).join("\n");
+    return c.html(`<html><body><section id="product_media_screenshots">${pictures}</section><div class="platform-description"></div></body></html>`);
+  });
+  app.get("/:store/app/id:appId", (c) => {
+    const appId = c.req.param("appId");
+    const apps = getApps(store);
+    const found = apps.find((a) => String(a.trackId) === appId);
+    if (!found) {
+      return c.html("<html><body></body></html>");
+    }
+    const pictures = found.screenshotUrls.map((url) => `<picture><source srcset="${url} 460w"></picture>`).join("\n");
+    return c.html(`<html><body><section id="product_media_screenshots">${pictures}</section><div class="platform-description"></div></body></html>`);
+  });
+}
+
+// src/routes/apns.ts
+var APNS_FAILURE_REASONS = /* @__PURE__ */ new Set([
+  "BadDeviceToken",
+  "BadExpirationDate",
+  "BadPriority",
+  "BadPushType",
+  "BadTopic",
+  "ExpiredProviderToken",
+  "Forbidden",
+  "DeviceTokenNotForTopic",
+  "InvalidProviderToken",
+  "PayloadEmpty",
+  "TopicDisallowed",
+  "TooManyRequests",
+  "Unregistered"
+]);
+function now2() {
+  return (/* @__PURE__ */ new Date()).toISOString();
+}
+function apnsState(store) {
+  const current = store.getData("apple:apns-state");
+  if (current) return current;
+  const initial = {
+    teams: {},
+    keys: {},
+    devices: {},
+    topics: {},
+    collapsed: {},
+    pending: [],
+    throttles: {}
+  };
+  store.setData("apple:apns-state", initial);
+  return initial;
+}
+function saveApnsState(store, state) {
+  store.setData("apple:apns-state", state);
+}
+function apnsDeliveries(store) {
+  return store.getData("apple:apns-deliveries") ?? [];
+}
+function saveApnsDelivery(store, delivery) {
+  const deliveries = [delivery, ...apnsDeliveries(store)];
+  store.setData("apple:apns-deliveries", deliveries);
+  store.setData("apple:apns-last-delivery", delivery);
+  store.setData("asc.apns_notifications", deliveries.map((item) => ({
+    id: item.id,
+    token: item.deviceToken,
+    topic: item.topic,
+    push_type: item.headers["apns-push-type"] ?? null,
+    priority: item.headers["apns-priority"] ?? null,
+    payload: item.payload,
+    received_at: item.receivedAt
+  })));
+}
+function apnsFailures(store) {
+  return store.getData("apple:apns-failures") ?? {};
+}
+function readExpiration(value) {
+  if (!value || value === "0") return null;
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed < 0) return "invalid";
+  return parsed;
+}
+function validationFailure(reason, status) {
+  return { reason, status };
+}
+function validateApnsRequest(store, request) {
+  const state = apnsState(store);
+  const topic = request.headers["apns-topic"];
+  const pushType = request.headers["apns-push-type"];
+  const priority = request.headers["apns-priority"];
+  const teamId = request.headers["apns-team-id"];
+  const keyId = request.headers["apns-key-id"];
+  const device = state.devices[request.token];
+  if (request.expiresAt === "invalid") return validationFailure("BadExpirationDate", 400);
+  if (!request.payload || typeof request.payload !== "object" || Array.isArray(request.payload)) return validationFailure("BadPayload", 400);
+  if (topic && Object.keys(state.topics).length > 0 && !state.topics[topic]) return validationFailure("BadTopic", 400);
+  if (device?.status === "unregistered") return validationFailure("Unregistered", 410);
+  if (device && topic && device.topic !== topic) return validationFailure("DeviceTokenNotForTopic", 400);
+  if (pushType && !["alert", "background", "voip", "complication", "fileprovider", "mdm", "liveactivity"].includes(pushType)) return validationFailure("BadPushType", 400);
+  if (priority && !["5", "10"].includes(priority)) return validationFailure("BadPriority", 400);
+  if (teamId && Object.keys(state.teams).length > 0 && !state.teams[teamId]) return validationFailure("Forbidden", 403);
+  if (keyId && teamId && Object.keys(state.keys).length > 0 && !state.keys[`${teamId}:${keyId}`]) return validationFailure("InvalidProviderToken", 403);
+  if (state.throttles[request.token] || topic && state.throttles[topic]) return validationFailure("TooManyRequests", 429);
+  return null;
+}
+function createDelivery(input) {
+  const topic = input.headers["apns-topic"] ?? "";
+  return {
+    id: input.headers["apns-id"] ?? crypto.randomUUID(),
+    deviceToken: input.token,
+    topic,
+    payload: input.payload,
+    headers: input.headers,
+    receivedAt: now2(),
+    expiresAt: input.expiresAt,
+    collapseId: input.headers["apns-collapse-id"] ?? null
+  };
+}
+function enqueueOrDeliver(store, delivery) {
+  const state = apnsState(store);
+  const device = state.devices[delivery.deviceToken];
+  if (device?.status === "offline") {
+    if (delivery.collapseId) state.collapsed[`${delivery.deviceToken}:${delivery.collapseId}`] = delivery;
+    else state.pending.push(delivery);
+    saveApnsState(store, state);
+    return { queued: true, delivery };
+  }
+  saveApnsDelivery(store, { ...delivery, deliveredAt: now2() });
+  return { queued: false, delivery };
+}
+function flushPendingDeliveries(store, token2) {
+  const state = apnsState(store);
+  const nowSeconds = Math.floor(Date.now() / 1e3);
+  const collapsed = Object.values(state.collapsed);
+  state.collapsed = {};
+  const pending = [...state.pending, ...collapsed];
+  const deliverable = [];
+  const retained = [];
+  for (const item of pending) {
+    if (token2 && item.deviceToken !== token2) {
+      retained.push(item);
+      continue;
+    }
+    if (item.expiresAt && item.expiresAt <= nowSeconds) continue;
+    deliverable.push({ ...item, deliveredAt: now2() });
+  }
+  state.pending = retained;
+  saveApnsState(store, state);
+  for (const delivery of deliverable) saveApnsDelivery(store, delivery);
+  return deliverable;
+}
+function parseLimit(value) {
+  if (!value) return 50;
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed < 1) return 50;
+  return Math.min(parsed, 500);
+}
+async function parseBody(c) {
+  return c.req.json().catch(() => null);
+}
+function apnsRoutes({ app, store }) {
+  app.post("/3/device/:token", async (c) => {
+    const token2 = c.req.param("token");
+    const headers = {
+      "apns-id": c.req.header("apns-id"),
+      "apns-topic": c.req.header("apns-topic"),
+      "apns-push-type": c.req.header("apns-push-type"),
+      "apns-collapse-id": c.req.header("apns-collapse-id"),
+      "apns-priority": c.req.header("apns-priority"),
+      "apns-expiration": c.req.header("apns-expiration"),
+      "apns-team-id": c.req.header("apns-team-id"),
+      "apns-key-id": c.req.header("apns-key-id"),
+      authorization: c.req.header("authorization")
+    };
+    const payload = await parseBody(c);
+    const expiresAt = readExpiration(headers["apns-expiration"]);
+    const failure = apnsFailures(store)[token2] ?? apnsFailures(store)["*"] ?? validateApnsRequest(store, { token: token2, payload, headers, expiresAt });
+    if (failure) return c.json({ reason: failure.reason }, failure.status);
+    const delivery = createDelivery({ token: token2, payload, headers, expiresAt: expiresAt === "invalid" ? null : expiresAt });
+    enqueueOrDeliver(store, delivery);
+    c.header("apns-id", delivery.id);
+    return c.body(null, 200);
+  });
+  app.post("/apns/send", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    const token2 = body.deviceToken ?? "";
+    const headers = {
+      "apns-id": crypto.randomUUID(),
+      "apns-topic": body.topic,
+      "apns-push-type": body.pushType,
+      "apns-collapse-id": body.collapseId,
+      "apns-priority": body.priority === void 0 ? void 0 : String(body.priority),
+      "apns-expiration": body.expiration === void 0 ? void 0 : String(body.expiration),
+      "apns-team-id": body.teamId,
+      "apns-key-id": body.keyId,
+      authorization: void 0
+    };
+    const expiresAt = readExpiration(headers["apns-expiration"]);
+    const failure = apnsFailures(store)[token2] ?? apnsFailures(store)["*"] ?? validateApnsRequest(store, {
+      token: token2,
+      payload: body.payload,
+      headers,
+      expiresAt
+    });
+    if (failure) return c.json({ reason: failure.reason }, failure.status);
+    const delivery = createDelivery({ token: token2, payload: body.payload, headers, expiresAt: expiresAt === "invalid" ? null : expiresAt });
+    const result = enqueueOrDeliver(store, delivery);
+    return c.json({ ok: true, queued: result.queued, delivery });
+  });
+  app.post("/apns/control/register-team", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    if (!body.teamId) return c.json({ error: "teamId required" }, 400);
+    const state = apnsState(store);
+    state.teams[body.teamId] = { teamId: body.teamId };
+    saveApnsState(store, state);
+    return c.json(state.teams[body.teamId]);
+  });
+  app.post("/apns/control/register-key", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    if (!body.teamId || !body.keyId) return c.json({ error: "teamId and keyId required" }, 400);
+    const state = apnsState(store);
+    state.keys[`${body.teamId}:${body.keyId}`] = { teamId: body.teamId, keyId: body.keyId };
+    saveApnsState(store, state);
+    return c.json(state.keys[`${body.teamId}:${body.keyId}`]);
+  });
+  app.post("/apns/control/register-topic", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    if (!body.topic) return c.json({ error: "topic required" }, 400);
+    const state = apnsState(store);
+    state.topics[body.topic] = { topic: body.topic };
+    saveApnsState(store, state);
+    return c.json(state.topics[body.topic]);
+  });
+  app.post("/apns/control/register-device", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    if (!body.deviceToken || !body.topic) return c.json({ error: "deviceToken and topic required" }, 400);
+    const state = apnsState(store);
+    state.devices[body.deviceToken] = { token: body.deviceToken, topic: body.topic, status: body.status ?? "registered" };
+    saveApnsState(store, state);
+    return c.json(state.devices[body.deviceToken]);
+  });
+  app.post("/apns/control/unregister-device", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    if (!body.deviceToken) return c.json({ error: "deviceToken required" }, 400);
+    const state = apnsState(store);
+    const device = state.devices[body.deviceToken] ?? { token: body.deviceToken, topic: "", status: "registered" };
+    device.status = "unregistered";
+    state.devices[body.deviceToken] = device;
+    saveApnsState(store, state);
+    return c.json(device);
+  });
+  app.post("/apns/control/set-device-status", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    if (!body.deviceToken || !body.status) return c.json({ error: "deviceToken and status required" }, 400);
+    const state = apnsState(store);
+    const device = state.devices[body.deviceToken];
+    if (!device) return c.json({ error: "device not registered" }, 404);
+    device.status = body.status;
+    saveApnsState(store, state);
+    const flushed = body.status === "registered" ? flushPendingDeliveries(store, body.deviceToken) : [];
+    return c.json({ device, flushed });
+  });
+  app.post("/apns/control/throttle", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    if (!body.key) return c.json({ error: "key required" }, 400);
+    const state = apnsState(store);
+    if (body.enabled === false) delete state.throttles[body.key];
+    else state.throttles[body.key] = true;
+    saveApnsState(store, state);
+    return c.json({ key: body.key, enabled: state.throttles[body.key] === true });
+  });
+  app.post("/apns/control/flush-pending", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    return c.json({ flushed: flushPendingDeliveries(store, body.deviceToken) });
+  });
+  app.post("/apns/control/fail", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    if (!body.reason || !APNS_FAILURE_REASONS.has(body.reason)) return c.json({ error: "valid reason required" }, 400);
+    const failures = apnsFailures(store);
+    failures[body.deviceToken ?? "*"] = { reason: body.reason, status: body.status ?? 400 };
+    store.setData("apple:apns-failures", failures);
+    return c.json(failures);
+  });
+  app.post("/apns/control/reset", (c) => {
+    store.setData("apple:apns-state", void 0);
+    store.setData("apple:apns-deliveries", []);
+    store.setData("apple:apns-last-delivery", null);
+    store.setData("apple:apns-failures", {});
+    store.setData("asc.apns_notifications", []);
+    return c.json({ ok: true });
+  });
+  app.get("/inspect/apns/state", (c) => c.json(apnsState(store)));
+  app.get("/inspect/apns/collapsed", (c) => c.json(apnsState(store).collapsed));
+  app.get("/inspect/apns/pending", (c) => c.json(apnsState(store).pending));
+  app.get("/inspect/apns/unregistered", (c) => c.json(Object.values(apnsState(store).devices).filter((device) => device.status === "unregistered")));
+  app.get("/inspect/apns/deliveries", (c) => c.json(apnsDeliveries(store)));
+  app.get("/inspect/apns/last-delivery", (c) => c.json(store.getData("apple:apns-last-delivery") ?? null));
+  app.get("/inspect/apns/failures", (c) => c.json(apnsFailures(store)));
+  app.get("/inspect/apns/notifications", (c) => {
+    const limit = parseLimit(c.req.query("limit"));
+    const token2 = c.req.query("token");
+    const notifications = (store.getData("asc.apns_notifications") ?? []).filter((notification) => !token2 || notification.token === token2).slice(0, limit);
+    return c.json({ data: notifications, meta: { limit, total: notifications.length } });
+  });
+}
+
+// src/routes/cloudkit.ts
+var now3 = () => (/* @__PURE__ */ new Date()).toISOString();
+var token = () => `ck-${Math.random().toString(36).slice(2, 12)}`;
+function recordKey(container, environment, database) {
+  return `icloud.cloudkit.${container}.${environment}.${database}.records`;
+}
+function zoneKey(container, environment, database) {
+  return `icloud.cloudkit.${container}.${environment}.${database}.zones`;
+}
+function subscriptionKey(container, environment, database) {
+  return `icloud.cloudkit.${container}.${environment}.${database}.subscriptions`;
+}
+function getArray(store, key) {
+  let items = store.getData(key);
+  if (!items) {
+    items = [];
+    store.setData(key, items);
+  }
+  return items;
+}
+function normalizeRecord(input) {
+  const timestamp = now3();
+  return {
+    recordName: input.recordName ?? token(),
+    recordType: input.recordType ?? "Item",
+    fields: input.fields ?? {},
+    zoneID: input.zoneID,
+    created: input.created ?? { timestamp },
+    modified: { timestamp }
+  };
+}
+function cloudKitRoutes({ app, store }) {
+  app.get(
+    "/database/1/:container/:environment/:database/users/current",
+    (c) => c.json({ userRecordName: "_defaultUser", firstName: "Test", lastName: "User" })
+  );
+  app.post("/database/1/:container/:environment/:database/records/lookup", async (c) => {
+    const { container, environment, database } = c.req.param();
+    const body = await c.req.json().catch(() => ({}));
+    const records = getArray(store, recordKey(container, environment, database));
+    const requested = Array.isArray(body.records) ? body.records : [];
+    return c.json({
+      records: requested.map((r) => {
+        const found = records.find((record) => record.recordName === r.recordName && !record.deleted);
+        return found ?? { recordName: r.recordName, serverErrorCode: "NOT_FOUND" };
+      })
+    });
+  });
+  app.post("/database/1/:container/:environment/:database/records/query", async (c) => {
+    const { container, environment, database } = c.req.param();
+    const body = await c.req.json().catch(() => ({}));
+    const records = getArray(store, recordKey(container, environment, database)).filter((record) => !record.deleted);
+    const recordType = body.query?.recordType;
+    const filtered = recordType ? records.filter((record) => record.recordType === recordType) : records;
+    const limit = Math.max(1, Math.min(Number(body.resultsLimit ?? 200), 200));
+    return c.json({ records: filtered.slice(0, limit) });
+  });
+  app.post("/database/1/:container/:environment/:database/records/modify", async (c) => {
+    const { container, environment, database } = c.req.param();
+    const body = await c.req.json().catch(() => ({}));
+    const records = getArray(store, recordKey(container, environment, database));
+    const operations = Array.isArray(body.operations) ? body.operations : [];
+    const results = operations.map((op) => {
+      if (op.operationType === "delete") {
+        const name = op.recordName ?? op.record?.recordName;
+        const idx2 = records.findIndex((record) => record.recordName === name);
+        if (idx2 === -1) return { recordName: name, serverErrorCode: "NOT_FOUND" };
+        const [deleted] = records.splice(idx2, 1);
+        return { recordName: deleted.recordName, deleted: true };
+      }
+      const next = normalizeRecord(op.record ?? {});
+      const idx = records.findIndex((record) => record.recordName === next.recordName);
+      if (idx === -1) {
+        records.push(next);
+      } else {
+        records[idx] = { ...records[idx], ...next, created: records[idx].created };
+      }
+      return idx === -1 ? next : records[idx];
+    });
+    store.setData(recordKey(container, environment, database), records);
+    return c.json({ records: results });
+  });
+  app.post("/database/1/:container/:environment/:database/zones/list", (c) => {
+    const { container, environment, database } = c.req.param();
+    const zones = getArray(store, zoneKey(container, environment, database));
+    if (zones.length === 0) zones.push({ zoneID: { zoneName: "_defaultZone" }, syncToken: token() });
+    return c.json({ zones });
+  });
+  app.post("/database/1/:container/:environment/:database/zones/modify", async (c) => {
+    const { container, environment, database } = c.req.param();
+    const body = await c.req.json().catch(() => ({}));
+    const zones = getArray(store, zoneKey(container, environment, database));
+    const operations = Array.isArray(body.operations) ? body.operations : [];
+    const results = operations.map((op) => {
+      const zoneID = op.zone?.zoneID ?? op.zoneID;
+      const zoneName = zoneID?.zoneName;
+      if (!zoneName) return { serverErrorCode: "BAD_REQUEST" };
+      const idx = zones.findIndex((zone2) => zone2.zoneID.zoneName === zoneName);
+      if (op.operationType === "delete") {
+        if (idx !== -1) zones.splice(idx, 1);
+        return { zoneID, deleted: true };
+      }
+      const zone = { zoneID, syncToken: token() };
+      if (idx === -1) zones.push(zone);
+      else zones[idx] = zone;
+      return zone;
+    });
+    store.setData(zoneKey(container, environment, database), zones);
+    return c.json({ zones: results });
+  });
+  app.post("/database/1/:container/:environment/:database/subscriptions/list", (c) => {
+    const { container, environment, database } = c.req.param();
+    return c.json({ subscriptions: getArray(store, subscriptionKey(container, environment, database)) });
+  });
+  app.post("/database/1/:container/:environment/:database/subscriptions/modify", async (c) => {
+    const { container, environment, database } = c.req.param();
+    const body = await c.req.json().catch(() => ({}));
+    const subscriptions = getArray(store, subscriptionKey(container, environment, database));
+    const operations = Array.isArray(body.operations) ? body.operations : [];
+    const results = operations.map((op) => {
+      const id = op.subscription?.subscriptionID ?? op.subscriptionID;
+      if (!id) return { serverErrorCode: "BAD_REQUEST" };
+      const idx = subscriptions.findIndex((subscription2) => subscription2.subscriptionID === id);
+      if (op.operationType === "delete") {
+        if (idx !== -1) subscriptions.splice(idx, 1);
+        return { subscriptionID: id, deleted: true };
+      }
+      const subscription = { ...op.subscription, subscriptionID: id };
+      if (idx === -1) subscriptions.push(subscription);
+      else subscriptions[idx] = subscription;
+      return subscription;
+    });
+    store.setData(subscriptionKey(container, environment, database), subscriptions);
+    return c.json({ subscriptions: results });
+  });
+}
+
+// src/store.ts
+function getASCStore(store) {
+  return {
+    apps: store.collection("asc.apps", ["asc_id", "bundle_id"]),
+    builds: store.collection("asc.builds", ["asc_id", "app_id"]),
+    versions: store.collection("asc.versions", ["asc_id", "app_id"]),
+    reviewSubmissions: store.collection("asc.review_submissions", ["asc_id", "app_id"]),
+    localizations: store.collection("asc.localizations", ["asc_id", "version_id"])
+  };
+}
+
+// src/routes/review-submissions.ts
 function getScenario(store) {
   return store.getData("asc.review_scenario") ?? "approve";
 }
@@ -157,7 +832,7 @@ function reviewSubmissionRoutes({ app, store, baseUrl }) {
           409
         );
       }
-      const now3 = (/* @__PURE__ */ new Date()).toISOString();
+      const now4 = (/* @__PURE__ */ new Date()).toISOString();
       const scenario = getScenario(store);
       let newState;
       let resolvedDate = null;
@@ -166,7 +841,7 @@ function reviewSubmissionRoutes({ app, store, baseUrl }) {
       switch (scenario) {
         case "approve":
           newState = "COMPLETE";
-          resolvedDate = now3;
+          resolvedDate = now4;
           break;
         case "reject":
           newState = "UNRESOLVED_ISSUES";
@@ -179,7 +854,7 @@ function reviewSubmissionRoutes({ app, store, baseUrl }) {
       }
       const updated2 = asc.reviewSubmissions.update(sub.id, {
         state: newState,
-        submitted_date: now3,
+        submitted_date: now4,
         resolved_date: resolvedDate,
         rejection_reasons: rejectionReasons,
         reviewer_notes: reviewerNotes
@@ -208,111 +883,7 @@ function reviewSubmissionRoutes({ app, store, baseUrl }) {
   });
 }
 
-// ../api-emulator-plugins/@apple/api-emulator/src/routes/auth.ts
-function getUsers(store) {
-  return store.getData("asc.users") ?? [];
-}
-function now() {
-  return (/* @__PURE__ */ new Date()).toISOString();
-}
-function fakeSignedHeaders(body = {}) {
-  const request = body.request ?? {};
-  return {
-    headers: {
-      "X-Apple-MD": "fake-md",
-      "X-Apple-MD-M": "fake-md-m",
-      "X-Apple-MD-RINFO": "17106176",
-      "X-Apple-MD-LU": "fake-lu",
-      "X-VPhone-Apple-Emulator": "1"
-    },
-    mescalSignature: "fake-mescal-signature",
-    request: {
-      url: typeof request.url === "string" ? request.url : null,
-      method: typeof request.method === "string" ? request.method : null
-    },
-    issuedAt: now()
-  };
-}
-function authRoutes({ app, store, baseUrl }) {
-  app.get("/bag.xml", (c) => c.json({
-    status: 0,
-    bag: {
-      profile: "AMSCore",
-      profileVersion: "1",
-      environment: "emulator"
-    },
-    issuedAt: now()
-  }));
-  app.post("/v1/signSapSetup", async (c) => {
-    const body = await c.req.json().catch(() => ({}));
-    const response = fakeSignedHeaders(body);
-    store.setData("apple:last-sign-sap-setup", body);
-    store.setData("apple:last-sign-sap-setup-response", response);
-    return c.json(response);
-  });
-  app.post("/auth/signin", async (c) => {
-    const body = await c.req.json().catch(() => ({}));
-    store.setData("apple:last-signin", body);
-    return c.json({
-      ok: true,
-      user: {
-        id: "apple-emulator-user",
-        email: "demo@apple-emulator.local"
-      },
-      token: "apple-emulator-token",
-      issuedAt: now()
-    });
-  });
-  app.get("/v1/users", (c) => {
-    const users = getUsers(store);
-    const { cursor, limit } = parseCursor(c);
-    const page = users.slice(cursor, cursor + limit);
-    return c.json(
-      jsonApiList(
-        baseUrl,
-        "users",
-        page.map((u) => ({
-          id: u.id,
-          attributes: {
-            username: u.email,
-            firstName: u.first_name,
-            lastName: u.last_name,
-            email: u.email,
-            roles: u.roles
-          }
-        })),
-        cursor,
-        limit,
-        users.length
-      )
-    );
-  });
-  app.get("/v1/users/:id", (c) => {
-    const id = c.req.param("id");
-    const users = getUsers(store);
-    const user = users.find((u) => u.id === id);
-    if (!user) {
-      return c.json(jsonApiError(404, "NOT_FOUND", "Not Found", `User ${id} not found`), 404);
-    }
-    return c.json(
-      jsonApiResource(baseUrl, "users", user.id, {
-        username: user.email,
-        firstName: user.first_name,
-        lastName: user.last_name,
-        email: user.email,
-        roles: user.roles
-      })
-    );
-  });
-  app.get("/v1/ciProducts/:productId/additionalRepositories", (_c) => {
-    return _c.json({ data: [], links: { self: `${baseUrl}/v1/ciProducts` }, meta: { paging: { total: 0, limit: 50 } } });
-  });
-  app.get("/v1/userInvitations", (c) => {
-    return c.json(jsonApiList(baseUrl, "userInvitations", [], 0, 50, 0));
-  });
-}
-
-// ../api-emulator-plugins/@apple/api-emulator/src/routes/reviews.ts
+// src/routes/reviews.ts
 function getReviews(store) {
   return store.getData("asc.customer_reviews") ?? [];
 }
@@ -412,7 +983,7 @@ function reviewRoutes({ app, store, baseUrl }) {
   });
 }
 
-// ../api-emulator-plugins/@apple/api-emulator/src/routes/xcode-cloud.ts
+// src/routes/xcode-cloud.ts
 function getProducts(store) {
   return store.getData("asc.ci_products") ?? [];
 }
@@ -671,7 +1242,7 @@ function xcodeCloudRoutes({ app, store, baseUrl }) {
   });
 }
 
-// ../api-emulator-plugins/@apple/api-emulator/src/routes/testflight.ts
+// src/routes/testflight.ts
 function getBetaGroups(store) {
   return store.getData("asc.beta_groups") ?? [];
 }
@@ -878,7 +1449,7 @@ function testflightRoutes({ app, store, baseUrl }) {
   });
 }
 
-// ../api-emulator-plugins/@apple/api-emulator/src/routes/upload.ts
+// src/routes/upload.ts
 function getUploads(store) {
   return store.getData("asc.uploads") ?? [];
 }
@@ -1037,7 +1608,7 @@ function uploadRoutes({ app, store, baseUrl }) {
   });
 }
 
-// ../api-emulator-plugins/@apple/api-emulator/src/routes/analytics.ts
+// src/routes/analytics.ts
 function getSnapshot(store) {
   return store.getData("asc.analytics_snapshot") ?? null;
 }
@@ -1077,7 +1648,7 @@ function analyticsRoutes({ app, store, baseUrl }) {
   });
 }
 
-// ../api-emulator-plugins/@apple/api-emulator/src/routes/apps.ts
+// src/routes/apps.ts
 function appRoutes({ app, store, baseUrl }) {
   const asc = getASCStore(store);
   app.get("/v1/apps", (c) => {
@@ -1279,7 +1850,7 @@ function appRoutes({ app, store, baseUrl }) {
   });
 }
 
-// ../api-emulator-plugins/@apple/api-emulator/src/routes/metadata.ts
+// src/routes/metadata.ts
 function getAppInfoLocalizations(store) {
   return store.getData("asc.app_info_localizations") ?? [];
 }
@@ -1432,7 +2003,7 @@ function metadataRoutes({ app, store, baseUrl }) {
   });
 }
 
-// ../api-emulator-plugins/@apple/api-emulator/src/routes/review-detail.ts
+// src/routes/review-detail.ts
 function getDetails(store) {
   let map = store.getData("asc.review_details");
   if (!map) {
@@ -1503,7 +2074,7 @@ function reviewDetailRoutes({ app, store, baseUrl }) {
   });
 }
 
-// ../api-emulator-plugins/@apple/api-emulator/src/routes/review-items.ts
+// src/routes/review-items.ts
 function getItems(store) {
   return store.getData("asc.review_submission_items") ?? [];
 }
@@ -1621,7 +2192,7 @@ function reviewItemRoutes({ app, store, baseUrl }) {
   });
 }
 
-// ../api-emulator-plugins/@apple/api-emulator/src/crud.ts
+// src/crud.ts
 function snakeCase(s) {
   return s.replace(/([A-Z])/g, "_$1").toLowerCase().replace(/^_/, "");
 }
@@ -1749,7 +2320,7 @@ function registerNestedList(app, store, baseUrl, parentPath, config, parentParam
   });
 }
 
-// ../api-emulator-plugins/@apple/api-emulator/src/routes/stubs.ts
+// src/routes/stubs.ts
 function stubRoutes({ app, store, baseUrl }) {
   const reg = (config) => registerCrud(app, store, baseUrl, config);
   const nested = (parentPath, config, parentParam, storeField) => registerNestedList(app, store, baseUrl, parentPath, config, parentParam, storeField);
@@ -2242,87 +2813,7 @@ function stubRoutes({ app, store, baseUrl }) {
   });
 }
 
-// ../api-emulator-plugins/@apple/api-emulator/src/routes/itunes.ts
-function getApps(store) {
-  return store.getData("itunes.apps") ?? [];
-}
-function searchApps(apps, term, limit) {
-  const lower = term.toLowerCase();
-  const matched = apps.filter(
-    (a) => a.trackName.toLowerCase().includes(lower) || a.bundleId.toLowerCase().includes(lower) || a.description.toLowerCase().includes(lower)
-  );
-  return matched.slice(0, limit);
-}
-function itunesResponse(results) {
-  return { resultCount: results.length, results };
-}
-function itunesRoutes({ app, store }) {
-  app.get("/search", (c) => {
-    const term = c.req.query("term") ?? "";
-    const limit = parseInt(c.req.query("limit") ?? "10", 10);
-    const results = searchApps(getApps(store), term, limit);
-    return c.json(itunesResponse(results));
-  });
-  app.get("/lookup", (c) => {
-    const id = c.req.query("id") ?? "";
-    const apps = getApps(store);
-    const found = apps.filter((a) => String(a.trackId) === id);
-    return c.json(itunesResponse(found));
-  });
-  app.get("/v1/app-store/search", (c) => {
-    const term = c.req.query("term") ?? "";
-    const limit = parseInt(c.req.query("limit") ?? "10", 10);
-    const results = searchApps(getApps(store), term, limit);
-    return c.json(itunesResponse(results));
-  });
-  app.get("/v1/app-store/lookup", (c) => {
-    const appId = c.req.query("appId") ?? "";
-    const apps = getApps(store);
-    const found = apps.filter((a) => String(a.trackId) === appId);
-    return c.json(itunesResponse(found));
-  });
-  app.get("/v1/app-store/storefront", (c) => {
-    const appId = c.req.query("appId") ?? "";
-    const apps = getApps(store);
-    const found = apps.find((a) => String(a.trackId) === appId);
-    if (!found || found.screenshotUrls.length === 0) {
-      return c.html("<html><body></body></html>");
-    }
-    const pictures = found.screenshotUrls.map((url) => `<picture><source srcset="${url} 460w"></picture>`).join("\n");
-    return c.html(`<html><body><section id="product_media_screenshots">${pictures}</section><div class="platform-description"></div></body></html>`);
-  });
-  app.get("/:store/app/id:appId", (c) => {
-    const appId = c.req.param("appId");
-    const apps = getApps(store);
-    const found = apps.find((a) => String(a.trackId) === appId);
-    if (!found) {
-      return c.html("<html><body></body></html>");
-    }
-    const pictures = found.screenshotUrls.map((url) => `<picture><source srcset="${url} 460w"></picture>`).join("\n");
-    return c.html(`<html><body><section id="product_media_screenshots">${pictures}</section><div class="platform-description"></div></body></html>`);
-  });
-}
-function seedITunes(store, config) {
-  if (config.apps) {
-    const apps = config.apps.map((a) => ({
-      trackId: a.trackId,
-      trackName: a.trackName,
-      bundleId: a.bundleId,
-      sellerName: a.sellerName ?? "",
-      primaryGenreName: a.primaryGenreName ?? "Utilities",
-      averageUserRating: a.averageUserRating ?? 4.5,
-      userRatingCount: a.userRatingCount ?? 100,
-      description: a.description ?? "",
-      screenshotUrls: a.screenshotUrls ?? [],
-      ipadScreenshotUrls: [],
-      appletvScreenshotUrls: [],
-      supportedDevices: ["iPhone", "iPad"]
-    }));
-    store.setData("itunes.apps", apps);
-  }
-}
-
-// ../api-emulator-plugins/@apple/api-emulator/src/routes/admin.ts
+// src/routes/admin.ts
 function adminRoutes({ app, store, baseUrl }) {
   const asc = getASCStore(store);
   app.post("/_admin/reset", (c) => {
@@ -2349,8 +2840,6 @@ function adminRoutes({ app, store, baseUrl }) {
     store.setData("asc.review_attachments", []);
     store.setData("asc.app_info_localizations", []);
     store.setData("asc.analytics_snapshot", null);
-    store.setData("itunes.apps", []);
-    store.setData("asc.apns_notifications", []);
     const crudTypes = [
       "certificates",
       "profiles",
@@ -2449,7 +2938,6 @@ function adminRoutes({ app, store, baseUrl }) {
     if (config.actors) store.setData("asc.actors", config.actors);
     if (config.customer_reviews) store.setData("asc.customer_reviews", config.customer_reviews);
     if (config.analytics_snapshot) store.setData("asc.analytics_snapshot", config.analytics_snapshot);
-    if (config.itunes) seedITunes(store, config.itunes);
     return c.json({ ok: true });
   });
   app.post("/_admin/scenario", async (c) => {
@@ -2477,323 +2965,27 @@ function adminRoutes({ app, store, baseUrl }) {
     buildUploadFiles: store.getData("asc.build_upload_files") ?? [],
     uploadChunks: store.getData("asc.upload_chunks") ?? {}
   }));
-  app.get("/inspect/last-sign-sap-setup", (c) => c.json(store.getData("apple:last-sign-sap-setup") ?? null));
-  app.get("/inspect/last-sign-sap-setup-response", (c) => c.json(store.getData("apple:last-sign-sap-setup-response") ?? null));
-  app.get("/inspect/last-signin", (c) => c.json(store.getData("apple:last-signin") ?? null));
 }
 
-// ../api-emulator-plugins/@apple/api-emulator/src/routes/apns.ts
-var APNS_FAILURE_REASONS = /* @__PURE__ */ new Set([
-  "BadDeviceToken",
-  "BadExpirationDate",
-  "BadPriority",
-  "BadPushType",
-  "BadTopic",
-  "ExpiredProviderToken",
-  "Forbidden",
-  "DeviceTokenNotForTopic",
-  "InvalidProviderToken",
-  "PayloadEmpty",
-  "TopicDisallowed",
-  "TooManyRequests",
-  "Unregistered"
-]);
-function now2() {
-  return (/* @__PURE__ */ new Date()).toISOString();
-}
-function apnsState(store) {
-  const current = store.getData("apple:apns-state");
-  if (current) return current;
-  const initial = {
-    teams: {},
-    keys: {},
-    devices: {},
-    topics: {},
-    collapsed: {},
-    pending: [],
-    throttles: {}
-  };
-  store.setData("apple:apns-state", initial);
-  return initial;
-}
-function saveApnsState(store, state) {
-  store.setData("apple:apns-state", state);
-}
-function apnsDeliveries(store) {
-  return store.getData("apple:apns-deliveries") ?? [];
-}
-function saveApnsDelivery(store, delivery) {
-  const deliveries = [delivery, ...apnsDeliveries(store)];
-  store.setData("apple:apns-deliveries", deliveries);
-  store.setData("apple:apns-last-delivery", delivery);
-  store.setData("asc.apns_notifications", deliveries.map((item) => ({
-    id: item.id,
-    token: item.deviceToken,
-    topic: item.topic,
-    push_type: item.headers["apns-push-type"] ?? null,
-    priority: item.headers["apns-priority"] ?? null,
-    payload: item.payload,
-    received_at: item.receivedAt
-  })));
-}
-function apnsFailures(store) {
-  return store.getData("apple:apns-failures") ?? {};
-}
-function readExpiration(value) {
-  if (!value || value === "0") return null;
-  const parsed = Number.parseInt(value, 10);
-  if (!Number.isFinite(parsed) || parsed < 0) return "invalid";
-  return parsed;
-}
-function validationFailure(reason, status) {
-  return { reason, status };
-}
-function validateApnsRequest(store, request) {
-  const state = apnsState(store);
-  const topic = request.headers["apns-topic"];
-  const pushType = request.headers["apns-push-type"];
-  const priority = request.headers["apns-priority"];
-  const teamId = request.headers["apns-team-id"];
-  const keyId = request.headers["apns-key-id"];
-  const device = state.devices[request.token];
-  if (request.expiresAt === "invalid") return validationFailure("BadExpirationDate", 400);
-  if (!request.payload || typeof request.payload !== "object" || Array.isArray(request.payload)) return validationFailure("BadPayload", 400);
-  if (topic && Object.keys(state.topics).length > 0 && !state.topics[topic]) return validationFailure("BadTopic", 400);
-  if (device?.status === "unregistered") return validationFailure("Unregistered", 410);
-  if (device && topic && device.topic !== topic) return validationFailure("DeviceTokenNotForTopic", 400);
-  if (pushType && !["alert", "background", "voip", "complication", "fileprovider", "mdm", "liveactivity"].includes(pushType)) return validationFailure("BadPushType", 400);
-  if (priority && !["5", "10"].includes(priority)) return validationFailure("BadPriority", 400);
-  if (teamId && Object.keys(state.teams).length > 0 && !state.teams[teamId]) return validationFailure("Forbidden", 403);
-  if (keyId && teamId && Object.keys(state.keys).length > 0 && !state.keys[`${teamId}:${keyId}`]) return validationFailure("InvalidProviderToken", 403);
-  if (state.throttles[request.token] || topic && state.throttles[topic]) return validationFailure("TooManyRequests", 429);
-  return null;
-}
-function createDelivery(input) {
-  const topic = input.headers["apns-topic"] ?? "";
-  return {
-    id: input.headers["apns-id"] ?? crypto.randomUUID(),
-    deviceToken: input.token,
-    topic,
-    payload: input.payload,
-    headers: input.headers,
-    receivedAt: now2(),
-    expiresAt: input.expiresAt,
-    collapseId: input.headers["apns-collapse-id"] ?? null
-  };
-}
-function enqueueOrDeliver(store, delivery) {
-  const state = apnsState(store);
-  const device = state.devices[delivery.deviceToken];
-  if (device?.status === "offline") {
-    if (delivery.collapseId) state.collapsed[`${delivery.deviceToken}:${delivery.collapseId}`] = delivery;
-    else state.pending.push(delivery);
-    saveApnsState(store, state);
-    return { queued: true, delivery };
-  }
-  saveApnsDelivery(store, { ...delivery, deliveredAt: now2() });
-  return { queued: false, delivery };
-}
-function flushPendingDeliveries(store, token) {
-  const state = apnsState(store);
-  const nowSeconds = Math.floor(Date.now() / 1e3);
-  const collapsed = Object.values(state.collapsed);
-  state.collapsed = {};
-  const pending = [...state.pending, ...collapsed];
-  const deliverable = [];
-  const retained = [];
-  for (const item of pending) {
-    if (token && item.deviceToken !== token) {
-      retained.push(item);
-      continue;
-    }
-    if (item.expiresAt && item.expiresAt <= nowSeconds) continue;
-    deliverable.push({ ...item, deliveredAt: now2() });
-  }
-  state.pending = retained;
-  saveApnsState(store, state);
-  for (const delivery of deliverable) saveApnsDelivery(store, delivery);
-  return deliverable;
-}
-function parseLimit(value) {
-  if (!value) return 50;
-  const parsed = Number.parseInt(value, 10);
-  if (!Number.isFinite(parsed) || parsed < 1) return 50;
-  return Math.min(parsed, 500);
-}
-async function parseBody(c) {
-  return c.req.json().catch(() => null);
-}
-function apnsRoutes({ app, store }) {
-  app.post("/3/device/:token", async (c) => {
-    const token = c.req.param("token");
-    const headers = {
-      "apns-id": c.req.header("apns-id"),
-      "apns-topic": c.req.header("apns-topic"),
-      "apns-push-type": c.req.header("apns-push-type"),
-      "apns-collapse-id": c.req.header("apns-collapse-id"),
-      "apns-priority": c.req.header("apns-priority"),
-      "apns-expiration": c.req.header("apns-expiration"),
-      "apns-team-id": c.req.header("apns-team-id"),
-      "apns-key-id": c.req.header("apns-key-id"),
-      authorization: c.req.header("authorization")
-    };
-    const payload = await parseBody(c);
-    const expiresAt = readExpiration(headers["apns-expiration"]);
-    const failure = apnsFailures(store)[token] ?? apnsFailures(store)["*"] ?? validateApnsRequest(store, { token, payload, headers, expiresAt });
-    if (failure) return c.json({ reason: failure.reason }, failure.status);
-    const delivery = createDelivery({ token, payload, headers, expiresAt: expiresAt === "invalid" ? null : expiresAt });
-    enqueueOrDeliver(store, delivery);
-    c.header("apns-id", delivery.id);
-    return c.body(null, 200);
-  });
-  app.post("/apns/send", async (c) => {
-    const body = await c.req.json().catch(() => ({}));
-    const token = body.deviceToken ?? "";
-    const headers = {
-      "apns-id": crypto.randomUUID(),
-      "apns-topic": body.topic,
-      "apns-push-type": body.pushType,
-      "apns-collapse-id": body.collapseId,
-      "apns-priority": body.priority === void 0 ? void 0 : String(body.priority),
-      "apns-expiration": body.expiration === void 0 ? void 0 : String(body.expiration),
-      "apns-team-id": body.teamId,
-      "apns-key-id": body.keyId,
-      authorization: void 0
-    };
-    const expiresAt = readExpiration(headers["apns-expiration"]);
-    const failure = apnsFailures(store)[token] ?? apnsFailures(store)["*"] ?? validateApnsRequest(store, {
-      token,
-      payload: body.payload,
-      headers,
-      expiresAt
-    });
-    if (failure) return c.json({ reason: failure.reason }, failure.status);
-    const delivery = createDelivery({ token, payload: body.payload, headers, expiresAt: expiresAt === "invalid" ? null : expiresAt });
-    const result = enqueueOrDeliver(store, delivery);
-    return c.json({ ok: true, queued: result.queued, delivery });
-  });
-  app.post("/apns/control/register-team", async (c) => {
-    const body = await c.req.json().catch(() => ({}));
-    if (!body.teamId) return c.json({ error: "teamId required" }, 400);
-    const state = apnsState(store);
-    state.teams[body.teamId] = { teamId: body.teamId };
-    saveApnsState(store, state);
-    return c.json(state.teams[body.teamId]);
-  });
-  app.post("/apns/control/register-key", async (c) => {
-    const body = await c.req.json().catch(() => ({}));
-    if (!body.teamId || !body.keyId) return c.json({ error: "teamId and keyId required" }, 400);
-    const state = apnsState(store);
-    state.keys[`${body.teamId}:${body.keyId}`] = { teamId: body.teamId, keyId: body.keyId };
-    saveApnsState(store, state);
-    return c.json(state.keys[`${body.teamId}:${body.keyId}`]);
-  });
-  app.post("/apns/control/register-topic", async (c) => {
-    const body = await c.req.json().catch(() => ({}));
-    if (!body.topic) return c.json({ error: "topic required" }, 400);
-    const state = apnsState(store);
-    state.topics[body.topic] = { topic: body.topic };
-    saveApnsState(store, state);
-    return c.json(state.topics[body.topic]);
-  });
-  app.post("/apns/control/register-device", async (c) => {
-    const body = await c.req.json().catch(() => ({}));
-    if (!body.deviceToken || !body.topic) return c.json({ error: "deviceToken and topic required" }, 400);
-    const state = apnsState(store);
-    state.devices[body.deviceToken] = { token: body.deviceToken, topic: body.topic, status: body.status ?? "registered" };
-    saveApnsState(store, state);
-    return c.json(state.devices[body.deviceToken]);
-  });
-  app.post("/apns/control/unregister-device", async (c) => {
-    const body = await c.req.json().catch(() => ({}));
-    if (!body.deviceToken) return c.json({ error: "deviceToken required" }, 400);
-    const state = apnsState(store);
-    const device = state.devices[body.deviceToken] ?? { token: body.deviceToken, topic: "", status: "registered" };
-    device.status = "unregistered";
-    state.devices[body.deviceToken] = device;
-    saveApnsState(store, state);
-    return c.json(device);
-  });
-  app.post("/apns/control/set-device-status", async (c) => {
-    const body = await c.req.json().catch(() => ({}));
-    if (!body.deviceToken || !body.status) return c.json({ error: "deviceToken and status required" }, 400);
-    const state = apnsState(store);
-    const device = state.devices[body.deviceToken];
-    if (!device) return c.json({ error: "device not registered" }, 404);
-    device.status = body.status;
-    saveApnsState(store, state);
-    const flushed = body.status === "registered" ? flushPendingDeliveries(store, body.deviceToken) : [];
-    return c.json({ device, flushed });
-  });
-  app.post("/apns/control/throttle", async (c) => {
-    const body = await c.req.json().catch(() => ({}));
-    if (!body.key) return c.json({ error: "key required" }, 400);
-    const state = apnsState(store);
-    if (body.enabled === false) delete state.throttles[body.key];
-    else state.throttles[body.key] = true;
-    saveApnsState(store, state);
-    return c.json({ key: body.key, enabled: state.throttles[body.key] === true });
-  });
-  app.post("/apns/control/flush-pending", async (c) => {
-    const body = await c.req.json().catch(() => ({}));
-    return c.json({ flushed: flushPendingDeliveries(store, body.deviceToken) });
-  });
-  app.post("/apns/control/fail", async (c) => {
-    const body = await c.req.json().catch(() => ({}));
-    if (!body.reason || !APNS_FAILURE_REASONS.has(body.reason)) return c.json({ error: "valid reason required" }, 400);
-    const failures = apnsFailures(store);
-    failures[body.deviceToken ?? "*"] = { reason: body.reason, status: body.status ?? 400 };
-    store.setData("apple:apns-failures", failures);
-    return c.json(failures);
-  });
-  app.post("/apns/control/reset", (c) => {
-    store.setData("apple:apns-state", void 0);
-    store.setData("apple:apns-deliveries", []);
-    store.setData("apple:apns-last-delivery", null);
-    store.setData("apple:apns-failures", {});
-    store.setData("asc.apns_notifications", []);
-    return c.json({ ok: true });
-  });
-  app.get("/inspect/apns/state", (c) => c.json(apnsState(store)));
-  app.get("/inspect/apns/collapsed", (c) => c.json(apnsState(store).collapsed));
-  app.get("/inspect/apns/pending", (c) => c.json(apnsState(store).pending));
-  app.get("/inspect/apns/unregistered", (c) => c.json(Object.values(apnsState(store).devices).filter((device) => device.status === "unregistered")));
-  app.get("/inspect/apns/deliveries", (c) => c.json(apnsDeliveries(store)));
-  app.get("/inspect/apns/last-delivery", (c) => c.json(store.getData("apple:apns-last-delivery") ?? null));
-  app.get("/inspect/apns/failures", (c) => c.json(apnsFailures(store)));
-  app.get("/inspect/apns/notifications", (c) => {
-    const limit = parseLimit(c.req.query("limit"));
-    const token = c.req.query("token");
-    const notifications = (store.getData("asc.apns_notifications") ?? []).filter((notification) => !token || notification.token === token).slice(0, limit);
-    return c.json({ data: notifications, meta: { limit, total: notifications.length } });
-  });
-}
-
-// ../api-emulator-plugins/@apple/api-emulator/src/index.ts
-var contract = {
-  provider: "apple",
-  source: "Apple APNs provider API documentation and App Store Connect API JSON:API conventions",
-  docs: "https://developer.apple.com/documentation/usernotifications/sending-notification-requests-to-apns",
-  scope: [
-    "ams-auth",
-    "apns-auth",
-    "teams",
-    "keys",
-    "topics",
-    "device-tokens",
-    "notifications",
-    "asc-apps",
-    "asc-build-uploads",
-    "asc-builds",
-    "asc-testflight",
-    "asc-review-submissions",
-    "asc-xcode-cloud",
-    "asc-metadata",
-    "asc-readiness"
-  ],
+// src/asc.ts
+var ascCapabilities = [
+  "asc-apps",
+  "asc-build-uploads",
+  "asc-builds",
+  "asc-testflight",
+  "asc-review-submissions",
+  "asc-xcode-cloud",
+  "asc-metadata",
+  "asc-readiness"
+];
+var ascContract = {
+  provider: "app-store-connect",
+  source: "App Store Connect API JSON:API conventions",
+  docs: "https://developer.apple.com/documentation/appstoreconnectapi",
+  scope: ascCapabilities,
   fidelity: "resource-model-subset"
 };
-function seedDefaults(store, _baseUrl) {
+function seedASCDefaults(store, _baseUrl) {
   const asc = getASCStore(store);
   asc.apps.insert({
     asc_id: "1234567890",
@@ -2851,36 +3043,72 @@ function seedFromConfig(store, _baseUrl, config) {
     store.setData("asc.reviewer_notes", config.reviewer_notes);
   }
 }
+function registerASCRoutes(ctx) {
+  reviewSubmissionRoutes(ctx);
+  ascUserRoutes(ctx);
+  reviewRoutes(ctx);
+  xcodeCloudRoutes(ctx);
+  testflightRoutes(ctx);
+  uploadRoutes(ctx);
+  analyticsRoutes(ctx);
+  appRoutes(ctx);
+  metadataRoutes(ctx);
+  reviewDetailRoutes(ctx);
+  reviewItemRoutes(ctx);
+  stubRoutes(ctx);
+  adminRoutes(ctx);
+}
+var ascPlugin = {
+  name: "app-store-connect",
+  register(app, store, webhooks = { dispatch: () => {
+  }, subscribe: () => () => {
+  } }, baseUrl = "", tokenMap) {
+    registerASCRoutes({ app, store, webhooks, baseUrl, tokenMap });
+  },
+  seed(store, baseUrl) {
+    seedASCDefaults(store, baseUrl);
+  }
+};
+
+// src/index.ts
+var contract = {
+  provider: "apple",
+  source: "Apple APNs provider API, App Store Connect JSON:API conventions, and CloudKit Web Services",
+  docs: "https://developer.apple.com/icloud/cloudkit/",
+  scope: [
+    "ams-auth",
+    "sign-in-with-apple-oauth",
+    "apns-auth",
+    "teams",
+    "keys",
+    "topics",
+    "device-tokens",
+    "notifications",
+    ...ascCapabilities,
+    "cloudkit-web-services",
+    "icloud-app-containers"
+  ],
+  fidelity: "resource-model-subset"
+};
 var plugin = {
   name: "apple",
   register(app, store, webhooks = { dispatch: () => {
   }, subscribe: () => () => {
   } }, baseUrl = "", tokenMap) {
     const ctx = { app, store, webhooks, baseUrl, tokenMap };
-    reviewSubmissionRoutes(ctx);
-    authRoutes(ctx);
-    reviewRoutes(ctx);
-    xcodeCloudRoutes(ctx);
-    testflightRoutes(ctx);
-    uploadRoutes(ctx);
-    analyticsRoutes(ctx);
-    appRoutes(ctx);
-    metadataRoutes(ctx);
-    reviewDetailRoutes(ctx);
-    reviewItemRoutes(ctx);
-    stubRoutes(ctx);
-    adminRoutes(ctx);
+    ascPlugin.register(app, store, webhooks, baseUrl, tokenMap);
+    appleIdentityRoutes(ctx);
     itunesRoutes(ctx);
     apnsRoutes(ctx);
+    cloudKitRoutes(ctx);
   },
   seed(store, baseUrl) {
-    seedDefaults(store, baseUrl);
+    ascPlugin.seed?.(store, baseUrl);
   }
 };
-var ascPlugin = plugin;
 var index_default = plugin;
-var label = "Apple AMS auth, APNS, and App Store Connect emulator";
-var endpoints = "apps, builds, versions, reviewSubmissions, customerReviews, users, ciProducts, ciWorkflows, ciBuildRuns, betaGroups, betaTesters, uploads, analytics, localizations, reviewDetails, certificates, profiles, screenshots, devices, subscriptions, gameCenter, local APNS, and 30+ more";
+var label = "Apple AMS auth, APNS, App Store Connect, and CloudKit emulator";
+var endpoints = "apps, builds, versions, reviewSubmissions, customerReviews, users, ciProducts, ciWorkflows, ciBuildRuns, betaGroups, betaTesters, uploads, analytics, localizations, reviewDetails, certificates, profiles, screenshots, devices, subscriptions, gameCenter, CloudKit records, zones, subscriptions, current user, local APNS, and 30+ more";
 var capabilities = contract.scope;
 var initConfig = {
   apple: {
@@ -2888,11 +3116,15 @@ var initConfig = {
     apnsProxyPath: "/apns/send",
     apnsDevicePath: "/3/device/:deviceToken",
     ascBaseUrlEnv: "ASC_API_BASE_URL",
+    cloudKitBaseUrlEnv: "CLOUDKIT_API_BASE_URL",
+    oauthBaseUrlEnv: "APPLEID_AUTH_BASE_URL",
     apps: [{ id: "1234567890", name: "My App", bundle_id: "com.example.app" }],
     review_scenario: "approve"
   }
 };
 export {
+  ascCapabilities,
+  ascContract,
   ascPlugin,
   capabilities,
   contract,
@@ -2902,5 +3134,7 @@ export {
   initConfig,
   label,
   plugin,
+  registerASCRoutes,
+  seedASCDefaults,
   seedFromConfig
 };

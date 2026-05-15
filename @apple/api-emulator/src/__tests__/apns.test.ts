@@ -2,13 +2,13 @@ import { describe, it, expect } from "vitest";
 import { Store } from "@api-emulator/core";
 import { Hono } from "hono";
 import type { AppEnv } from "@api-emulator/core";
-import { ascPlugin } from "../index.js";
+import { plugin } from "../index.js";
 
 function createTestApp() {
   const app = new Hono<AppEnv>();
   const store = new Store();
   const webhooks = { dispatch: () => {}, subscribe: () => () => {} } as never;
-  ascPlugin.register(app, store, webhooks, "http://localhost:4000");
+  plugin.register(app, store, webhooks, "http://localhost:4000");
   return app;
 }
 

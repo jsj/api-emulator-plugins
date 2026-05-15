@@ -1,7 +1,6 @@
 import type { RouteContext } from "@api-emulator/core";
 import { getASCStore } from "../store.js";
-import { seedFromConfig, type ASCSeedConfig } from "../index.js";
-import { seedITunes } from "./itunes.js";
+import { seedFromConfig, type ASCSeedConfig } from "../asc.js";
 import type { ReviewScenario } from "../entities.js";
 
 /**
@@ -40,9 +39,6 @@ export function adminRoutes({ app, store, baseUrl }: RouteContext): void {
     store.setData("asc.review_attachments", []);
     store.setData("asc.app_info_localizations", []);
     store.setData("asc.analytics_snapshot", null);
-    store.setData("itunes.apps", []);
-    store.setData("asc.apns_notifications", []);
-
     // Clear all CRUD-backed collections
     const crudTypes = [
       "certificates", "profiles", "devices", "bundleIds",
@@ -101,9 +97,6 @@ export function adminRoutes({ app, store, baseUrl }: RouteContext): void {
     if (config.customer_reviews) store.setData("asc.customer_reviews", config.customer_reviews);
     if (config.analytics_snapshot) store.setData("asc.analytics_snapshot", config.analytics_snapshot);
 
-    // iTunes / ASO seed
-    if (config.itunes) seedITunes(store, config.itunes as Record<string, unknown>);
-
     return c.json({ ok: true });
   });
 
@@ -142,7 +135,4 @@ export function adminRoutes({ app, store, baseUrl }: RouteContext): void {
     buildUploadFiles: store.getData("asc.build_upload_files") ?? [],
     uploadChunks: store.getData("asc.upload_chunks") ?? {},
   }));
-  app.get("/inspect/last-sign-sap-setup", (c) => c.json(store.getData("apple:last-sign-sap-setup") ?? null));
-  app.get("/inspect/last-sign-sap-setup-response", (c) => c.json(store.getData("apple:last-sign-sap-setup-response") ?? null));
-  app.get("/inspect/last-signin", (c) => c.json(store.getData("apple:last-signin") ?? null));
 }
