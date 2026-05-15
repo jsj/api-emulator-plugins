@@ -6,11 +6,11 @@ Extend `npm run smoke:cli` with provider CLIs that exercise real user workflows 
 
 | Surface | CLI | Emulator target | Status |
 |---|---|---|---|
-| Meta Ads | `meta-ads` from `pip install meta-ads` | `@meta` Marketing API / Graph API-compatible routes | Needs install + base URL probe |
+| Meta Ads | `meta-ads` from `pip install meta-ads` | `@meta` Marketing API / Graph API-compatible routes | Graph route smoke covered; CLI base URL probe remains |
 | Meta Horizon / Oculus | `/usr/local/bin/ovr-platform-util` | New Meta Horizon app release/build emulator routes | CLI installed; base URL override unknown |
 | Sentry | `sentry-cli` from `getsentry/sentry-cli` | Expand `@sentry` beyond webhook producer into Sentry REST subset | Needs install; likely supports `SENTRY_URL` |
 | Google Play Console | `/Users/james/Developer/zzabandoned/play-console-cli` (`gplay`) | New Google Play Android Publisher emulator routes | Needs local binary/build + base URL patch/probe |
-| fal / genmedia | `genmedia` | Existing `@fal` model, queue, assets, and platform routes | Installed; setup completed with auto env loading and no saved key |
+| fal / genmedia | `genmedia` | Existing `@fal` model, queue, assets, and platform routes | CLI smoke covers `models` + `schema` via temp patched binary |
 
 ## Meta Ads
 
@@ -71,14 +71,14 @@ First CLI smoke:
 
 `genmedia` is installed and configured non-interactively with JSON output and `.env` auto-loading enabled. The setup intentionally did not save a key; CLI tests should inject a dummy `FAL_KEY` and emulator base URL through environment variables or a patched genmedia base-url flag.
 
-First smoke target:
+Current smoke coverage:
 
 1. Start the `@fal` emulator.
-2. Run `genmedia models --endpoint_id fal-ai/flux/dev`.
-3. Run a deterministic `genmedia run fal-ai/flux/dev` request and assert the returned asset URL points at the emulator.
-4. Run a video model request for `bytedance/seedance-2.0/fast/text-to-video` to exercise queue/result handling.
+2. Create a temporary copy of `genmedia` with the embedded `https://api.fal.ai/v1` string replaced by `http://127.0.0.1:8787`.
+3. Run `genmedia models --endpoint_id fal-ai/flux/dev`.
+4. Run `genmedia schema fal-ai/flux/dev`.
 
-If genmedia hardcodes fal.ai hosts, patch the OSS CLI or add a wrapper env var before adding it to `npm run smoke:cli`.
+Remaining gap: `genmedia run` still uses the fal JS runtime host path outside the patched model/schema API base. Close this by adding an upstream base URL/env override to genmedia/fal-js, then assert deterministic image and video runs against the emulator.
 
 ## Common harness changes
 

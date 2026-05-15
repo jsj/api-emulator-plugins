@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -10,8 +10,10 @@ import { customerRoutes } from '../@stripe/api-emulator/src/routes/customers.ts'
 import { s3Routes } from '../@aws/api-emulator/src/routes/s3.ts';
 import { plugin as googlePlugin } from '../@google/api-emulator.mjs';
 import { plugin as kubernetesPlugin, seedFromConfig as seedKubernetes } from '../@kubernetes/api-emulator/index.mjs';
+import { plugin as metaPlugin, seedFromConfig as seedMeta } from '../@meta/api-emulator.mjs';
 import { plugin as openaiPlugin } from '../@openai/api-emulator.mjs';
 import { plugin as supabasePlugin } from '../@supabase/api-emulator.mjs';
+import { plugin as falPlugin } from '../@fal/api-emulator.mjs';
 
 class Collection {
   constructor(indexes = []) {
@@ -163,7 +165,7 @@ async function requestBody(req) {
   return Buffer.concat(chunks).toString('utf8');
 }
 
-async function withServer(app, fn) {
+async function withServer(app, fn, options = {}) {
   const server = createServer(async (req, res) => {
     const rawBody = await requestBody(req);
     const requestUrl = `http://${req.headers.host}${req.url}`;
@@ -179,6 +181,7 @@ async function withServer(app, fn) {
     }
     if (selected) {
       const { route, params } = selected;
+      if (process.env.DEBUG_CLI_SMOKE) console.error(`  -> ${route.method} ${route.path}`);
       const result = await route.handler(createContext(req, res, params, requestUrl, rawBody));
       if (result instanceof Response) {
         res.statusCode = result.status;
@@ -191,10 +194,11 @@ async function withServer(app, fn) {
     res.setHeader('content-type', 'application/json');
     res.end(JSON.stringify({ error: 'not_found', path: pathname }));
   });
-  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  await new Promise((resolve) => server.listen(options.port ?? 0, options.host ?? '127.0.0.1', resolve));
   const { port } = server.address();
+  const host = options.host ?? '127.0.0.1';
   try {
-    await fn(`http://127.0.0.1:${port}`);
+    await fn(`http://${host}:${port}`);
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
@@ -217,6 +221,33 @@ function run(command, args, options = {}) {
       else reject(new Error(`${command} ${args.join(' ')} failed with ${code}\nSTDOUT:\n${stdout}\nSTDERR:\n${stderr}`));
     });
   });
+}
+
+async function commandPath(command) {
+  const located = await run('/usr/bin/which', [command]).catch(() => null);
+  return located?.stdout.trim() || null;
+}
+
+async function patchedGenmedia(apiBaseUrl) {
+  const source = process.env.GENMEDIA_BIN || await commandPath('genmedia');
+  if (!source) return null;
+  const original = Buffer.from('https://api.fal.ai/v1');
+  const replacement = Buffer.from(apiBaseUrl);
+  assert.equal(replacement.length, original.length, 'patched genmedia API base must match embedded URL length');
+
+  const binary = await readFile(source);
+  assert.ok(binary.includes(original), 'genmedia binary does not contain expected fal API base URL');
+  const dir = await mkdtemp(join(tmpdir(), 'api-emulator-genmedia-'));
+  const path = join(dir, 'genmedia');
+  const patched = Buffer.from(binary.toString('binary').replaceAll(original.toString('binary'), replacement.toString('binary')), 'binary');
+  await writeFile(path, patched, { mode: 0o755 });
+  return { path, dir };
+}
+
+function metaCliBaseArgs(help, baseUrl) {
+  if (help.includes('--api-base')) return ['--api-base', baseUrl];
+  if (help.includes('--base-url')) return ['--base-url', baseUrl];
+  return null;
 }
 
 async function googleDiscoveryCache(baseUrl) {
@@ -348,8 +379,13 @@ async function main() {
     }],
   });
   openaiPlugin.register(app, store);
+  metaPlugin.register(app, store);
+  seedMeta(store, 'http://127.0.0.1', {
+    campaigns: [{ id: 'meta_campaign_seed', name: 'Meta CLI Seed Campaign', status: 'active', budget: 100 }],
+  });
   supabasePlugin.register(app, store);
   googlePlugin.register(app, store);
+  falPlugin.register(app, store);
 
   await withServer(app, async (baseUrl) => {
     const stripe = await run('stripe', ['get', '/v1/customers', '--api-base', baseUrl, '--api-key', 'sk_test_cli_smoke', '--limit', '1']);
@@ -388,6 +424,34 @@ async function main() {
     const openai = await run('openai', ['--api-base', `${baseUrl}/v1/`, '--api-key', 'sk-test', 'api', 'chat.completions.create', '-m', 'gpt-4.1-mini', '-g', 'user', 'hello from cli']);
     assert.match(openai.stdout, /openai-emulator-text/);
 
+    const metaAdAccounts = await fetch(`${baseUrl}/v20.0/me/adaccounts?access_token=test`);
+    assert.equal(metaAdAccounts.status, 200);
+    assert.equal((await metaAdAccounts.json()).data[0].id, 'act_123456');
+    const metaCampaignCreate = await fetch(`${baseUrl}/v20.0/act_123456/campaigns`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ name: 'Meta CLI Smoke Campaign', status: 'PAUSED', daily_budget: '5000', objective: 'OUTCOME_SALES' }),
+    });
+    assert.equal(metaCampaignCreate.status, 201);
+    const metaCampaign = await metaCampaignCreate.json();
+    assert.equal(metaCampaign.status, 'PAUSED');
+    assert.equal(metaCampaign.name, 'Meta CLI Smoke Campaign');
+    const metaCampaignRead = await fetch(`${baseUrl}/v20.0/${metaCampaign.id}?access_token=test`);
+    assert.equal(metaCampaignRead.status, 200);
+    assert.equal((await metaCampaignRead.json()).name, 'Meta CLI Smoke Campaign');
+
+    const metaHelp = await run('meta', ['--help']).catch((error) => ({ stdout: '', stderr: String(error), skipped: true }));
+    const metaBaseArgs = metaHelp.skipped ? null : metaCliBaseArgs(`${metaHelp.stdout}\n${metaHelp.stderr}`, baseUrl);
+    if (metaBaseArgs) {
+      const metaEnv = { ACCESS_TOKEN: 'test', AD_ACCOUNT_ID: 'act_123456' };
+      const metaAccounts = await run('meta', [...metaBaseArgs, 'ads', 'adaccount', 'list', '--output', 'json'], { env: metaEnv });
+      assert.match(metaAccounts.stdout, /act_123456/);
+      const metaCreated = await run('meta', [...metaBaseArgs, 'ads', 'campaign', 'create', '--name', 'Meta CLI Smoke Created', '--objective', 'OUTCOME_SALES', '--daily-budget', '5000', '--output', 'json'], { env: metaEnv });
+      assert.match(metaCreated.stdout, /Meta CLI Smoke Created|meta_campaign_/);
+    } else {
+      console.warn('meta-ads CLI unavailable or lacks a documented base URL flag; Meta Graph emulator route smoke covered');
+    }
+
     const gws = '/Users/james/Developer/zzabandoned/gwspace-cli/target/debug/gws';
     if (existsSync(gws)) {
       const gwsConfig = await mkdtemp(join(tmpdir(), 'api-emulator-gws-'));
@@ -417,6 +481,27 @@ async function main() {
     if (!supabase.skipped) assert.match(supabase.stdout, /project_emulator/);
     else console.warn('supabase CLI management API base override unavailable in installed CLI; emulator route shim registered');
   });
+
+  await withServer(app, async () => {
+    const genmedia = await patchedGenmedia('http://127.0.0.1:8787');
+    if (!genmedia) {
+      console.warn('genmedia CLI unavailable; skipping fal CLI smoke');
+      return;
+    }
+    try {
+      const env = {
+        FAL_KEY: 'fal_emulator_key',
+        GENMEDIA_NO_ANALYTICS: '1',
+        GENMEDIA_NO_UPDATE: '1',
+      };
+      const models = await run(genmedia.path, ['models', '--endpoint_id', 'fal-ai/flux/dev'], { env });
+      assert.match(models.stdout, /fal-ai\/flux\/dev/);
+      const schema = await run(genmedia.path, ['schema', 'fal-ai/flux/dev'], { env });
+      assert.match(schema.stdout, /fal-ai\/flux\/dev/);
+    } finally {
+      await rm(genmedia.dir, { recursive: true, force: true });
+    }
+  }, { port: 8787, host: '127.0.0.1' });
 }
 
 await main();

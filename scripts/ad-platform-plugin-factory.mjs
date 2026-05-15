@@ -97,6 +97,11 @@ function toMetaCampaign(campaign) {
   };
 }
 
+async function metaBody(c) {
+  const parsed = await c.req.json().catch(async () => c.req.parseBody?.() ?? {});
+  return parsed && typeof parsed === 'object' ? parsed : {};
+}
+
 function toSnapCampaign(campaign) {
   return {
     id: campaign.id,
@@ -198,15 +203,36 @@ export function createAdPlatformPlugin({ provider, label, docs, source, scope })
         store.setData?.(key, hits);
       }
 
-      app.get('/v18.0/:accountId/campaigns', (c) => {
+      function getMetaCampaign(c) {
+        hit('meta.campaign.get');
+        const campaign = state(store, provider).campaigns.find((item) => item.id === c.req.param('campaignId'));
+        if (!campaign) return c.json({ error: { message: 'Unsupported get request' } }, 404);
+        return c.json(toMetaCampaign(campaign));
+      }
+
+      app.get('/:graphVersion/me/adaccounts', (c) => {
+        hit('meta.adaccount.list');
+        return c.json({
+          data: [{
+            id: 'act_123456',
+            account_id: '123456',
+            name: `${label} Emulator Account`,
+            account_status: 1,
+            currency: 'USD',
+            timezone_name: 'Etc/UTC',
+          }],
+        });
+      });
+
+      app.get('/:graphVersion/:accountId/campaigns', (c) => {
         hit('meta.campaign.list');
         return c.json({ data: state(store, provider).campaigns.map(toMetaCampaign) });
       });
 
-      app.post('/v18.0/:accountId/campaigns', async (c) => {
+      app.post('/:graphVersion/:accountId/campaigns', async (c) => {
         hit('meta.campaign.create');
         const next = state(store, provider);
-        const body = await c.req.json().catch(() => ({}));
+        const body = await metaBody(c);
         const campaign = {
           id: `${provider}_campaign_${next.nextCampaignId++}`,
           name: body.name ?? `${label} Campaign`,
@@ -222,19 +248,16 @@ export function createAdPlatformPlugin({ provider, label, docs, source, scope })
         return c.json(toMetaCampaign(campaign), 201);
       });
 
-      app.get('/v18.0/:campaignId', (c) => {
-        hit('meta.campaign.get');
-        const campaign = state(store, provider).campaigns.find((item) => item.id === c.req.param('campaignId'));
-        if (!campaign) return c.json({ error: { message: 'Unsupported get request' } }, 404);
-        return c.json(toMetaCampaign(campaign));
-      });
+      app.get('/v18.0/:campaignId', getMetaCampaign);
+      app.get('/v20.0/:campaignId', getMetaCampaign);
+      app.get('/:graphVersion/:campaignId', getMetaCampaign);
 
-      app.post('/v18.0/:campaignId', async (c) => {
+      app.post('/:graphVersion/:campaignId', async (c) => {
         hit('meta.campaign.update');
         const next = state(store, provider);
         const campaign = next.campaigns.find((item) => item.id === c.req.param('campaignId'));
         if (!campaign) return c.json({ error: { message: 'Unsupported post request' } }, 404);
-        const body = await c.req.json().catch(() => ({}));
+        const body = await metaBody(c);
         if (body.name) campaign.name = body.name;
         if (body.daily_budget !== undefined) campaign.budget = Number(body.daily_budget) / 100;
         if (body.status) campaign.status = body.status === 'PAUSED' ? 'paused' : body.status === 'ARCHIVED' ? 'archived' : 'active';
@@ -243,7 +266,7 @@ export function createAdPlatformPlugin({ provider, label, docs, source, scope })
         return c.json({ success: true });
       });
 
-      app.get('/v18.0/:accountId/insights', (c) => {
+      app.get('/:graphVersion/:accountId/insights', (c) => {
         hit('meta.report');
         return c.json({ data: [{ spend: '321.45', impressions: '12000', clicks: '840', ctr: '7', cpc: '0.3827', actions: [{ action_type: 'conversion', value: '42' }] }] });
       });
