@@ -49,7 +49,7 @@ function createHarness() {
 
 const harness = createHarness();
 assert.equal(contract.provider, 'github');
-assert.equal(contract.openapiRouteCount, 1183);
+assert.equal(contract.openapiRouteCount, 1184);
 const user = await harness.call('GET', '/user');
 assert.equal(user.payload.login, 'jsj');
 const repos = await harness.call('GET', '/user/repos');

@@ -4,163 +4,169 @@
       "kind": "package",
       "packageName": "@api-emulator/apple",
       "specifier": "./@apple/api-emulator/src/index.ts",
-      "description": "Apple API emulator plugin"
+      "description": "Apple provides identity, app store, device, and platform services for iOS and macOS apps."
     },
     "adyen": {
       "kind": "package",
       "packageName": "@api-emulator/adyen",
       "specifier": "./@adyen/api-emulator.mjs",
-      "description": "Adyen API emulator plugin"
+      "description": "Adyen is a payments platform for checkout, payment methods, transaction processing, and payouts."
     },
     "auth0": {
       "kind": "package",
       "packageName": "@api-emulator/auth0",
       "specifier": "./@auth0/api-emulator/src/index.ts",
-      "description": "Auth0 API emulator plugin"
+      "description": "Auth0 provides authentication, authorization, user management, tokens, and tenant configuration."
     },
     "aws": {
       "kind": "package",
       "packageName": "@api-emulator/aws",
       "specifier": "./@aws/api-emulator/src/index.ts",
-      "description": "AWS API emulator plugin"
+      "description": "AWS provides cloud infrastructure APIs for storage, queues, identity, compute, and managed services."
     },
     "browserbase": {
       "kind": "package",
       "packageName": "@api-emulator/browserbase",
       "specifier": "./@browserbase/api-emulator.mjs",
-      "description": "Browserbase API emulator plugin"
+      "description": "Browserbase provides hosted browser sessions for web automation, scraping, and agent workflows."
     },
     "clerk": {
       "kind": "package",
       "packageName": "@api-emulator/clerk",
       "specifier": "./@clerk/api-emulator/src/index.ts",
-      "description": "Clerk API emulator plugin"
+      "description": "Clerk provides user authentication, sessions, organizations, OAuth, and identity-management primitives."
     },
     "discord": {
       "kind": "package",
       "packageName": "@api-emulator/discord",
       "specifier": "./@discord/api-emulator/src/index.ts",
-      "description": "Discord API emulator plugin"
+      "description": "Discord provides community, messaging, guild, channel, bot, and interaction APIs."
     },
     "github": {
       "kind": "package",
       "packageName": "@api-emulator/github",
       "specifier": "./@github/api-emulator/src/index.ts",
-      "description": "GitHub API emulator plugin"
+      "description": "GitHub provides source hosting, repositories, issues, pull requests, Actions, checks, and git data."
     },
     "google": {
       "kind": "package",
       "packageName": "@api-emulator/google",
       "specifier": "./@google/api-emulator/src/index.ts",
-      "description": "Google Workspace API emulator plugin"
+      "description": "Google provides OAuth and Workspace APIs for Gmail, Drive, Calendar, Docs, Sheets, and admin workflows."
+    },
+    "linear": {
+      "kind": "package",
+      "packageName": "@api-emulator/linear",
+      "specifier": "./@linear/api-emulator/src/index.ts",
+      "description": "Linear provides issue tracking, teams, projects, cycles, workflow states, and product planning APIs."
     },
     "microsoft": {
       "kind": "package",
       "packageName": "@api-emulator/microsoft",
       "specifier": "./@microsoft/api-emulator/src/index.ts",
-      "description": "Microsoft API emulator plugin"
+      "description": "Microsoft provides identity, tenant, user, and productivity APIs through Microsoft Graph-style surfaces."
     },
     "mongoatlas": {
       "kind": "package",
       "packageName": "@api-emulator/mongoatlas",
       "specifier": "./@mongoatlas/api-emulator/src/index.ts",
-      "description": "MongoDB Atlas API emulator plugin"
+      "description": "MongoDB Atlas provides managed database projects, clusters, admin APIs, and data access surfaces."
     },
     "mixpanel": {
       "kind": "package",
       "packageName": "@api-emulator/mixpanel",
       "specifier": "./@mixpanel/api-emulator.mjs",
-      "description": "Mixpanel API emulator plugin"
+      "description": "Mixpanel provides product analytics APIs for event ingestion, user profiles, exports, and reporting."
     },
     "neon": {
       "kind": "package",
       "packageName": "@api-emulator/neon",
       "specifier": "./@neon/api-emulator.mjs",
-      "description": "Neon API emulator plugin"
+      "description": "Neon provides serverless Postgres with projects, branches, databases, roles, endpoints, and previews."
     },
     "netlify": {
       "kind": "package",
       "packageName": "@api-emulator/netlify",
       "specifier": "./@netlify/api-emulator.mjs",
-      "description": "Netlify API emulator plugin"
+      "description": "Netlify provides web hosting APIs for sites, deploys, builds, environment variables, and domains."
     },
     "okta": {
       "kind": "package",
       "packageName": "@api-emulator/okta",
       "specifier": "./@okta/api-emulator/src/index.ts",
-      "description": "Okta API emulator plugin"
+      "description": "Okta provides identity APIs for OAuth, users, groups, apps, sessions, and identity providers."
     },
     "posthog": {
       "kind": "package",
       "packageName": "@api-emulator/posthog",
       "specifier": "./@posthog/api-emulator.mjs",
-      "description": "PostHog API emulator plugin"
+      "description": "PostHog provides product analytics, event capture, feature flags, persons, and project APIs."
     },
     "planetscale": {
       "kind": "package",
       "packageName": "@api-emulator/planetscale",
       "specifier": "./@planetscale/api-emulator.mjs",
-      "description": "PlanetScale API emulator plugin"
+      "description": "PlanetScale provides MySQL database branching, organizations, deploy requests, passwords, and workflows."
     },
     "privy": {
       "kind": "package",
       "packageName": "@api-emulator/privy",
       "specifier": "./@privy/api-emulator.mjs",
-      "description": "Privy API emulator plugin"
+      "description": "Privy provides embedded wallets, authentication, user identity, and authorization for crypto apps."
     },
     "resend": {
       "kind": "package",
       "packageName": "@api-emulator/resend",
       "specifier": "./@resend/api-emulator/src/index.ts",
-      "description": "Resend API emulator plugin"
+      "description": "Resend provides developer email APIs for sending messages, domains, contacts, audiences, and broadcasts."
     },
     "sentry": {
       "kind": "package",
       "packageName": "@api-emulator/sentry",
       "specifier": "./@sentry/api-emulator.mjs",
-      "description": "Sentry API emulator plugin"
+      "description": "Sentry provides error tracking, projects, issues, events, releases, organizations, and alerting APIs."
     },
     "slack": {
       "kind": "package",
       "packageName": "@api-emulator/slack",
       "specifier": "./@slack/api-emulator/src/index.ts",
-      "description": "Slack API emulator plugin"
+      "description": "Slack provides workplace messaging APIs for OAuth, users, teams, conversations, messages, and webhooks."
     },
     "stripe": {
       "kind": "package",
       "packageName": "@api-emulator/stripe",
       "specifier": "./@stripe/api-emulator/src/index.ts",
-      "description": "Stripe API emulator plugin"
+      "description": "Stripe provides payments and billing APIs for customers, checkout, payment intents, invoices, and subscriptions."
     },
     "supabase": {
       "kind": "package",
       "packageName": "@api-emulator/supabase",
       "specifier": "./@supabase/api-emulator.mjs",
-      "description": "Supabase API emulator plugin"
+      "description": "Supabase provides backend APIs for Postgres projects, auth, storage, edge functions, and database workflows."
     },
     "telegram": {
       "kind": "package",
       "packageName": "@api-emulator/telegram",
       "specifier": "./@telegram/api-emulator/src/index.ts",
-      "description": "Telegram Bot API emulator plugin"
+      "description": "Telegram provides bot APIs for updates, messages, chats, webhooks, and interactive bot workflows."
     },
     "twilio": {
       "kind": "package",
       "packageName": "@api-emulator/twilio",
       "specifier": "./@twilio/api-emulator/src/index.ts",
-      "description": "Twilio API emulator plugin"
+      "description": "Twilio provides communications APIs for messaging, phone numbers, verification, voice, and customer engagement."
     },
     "upstash": {
       "kind": "package",
       "packageName": "@api-emulator/upstash",
       "specifier": "./@upstash/api-emulator.mjs",
-      "description": "Upstash API emulator plugin"
+      "description": "Upstash provides serverless data and messaging APIs for Redis, QStash, Kafka-style streams, and workflows."
     },
     "vercel": {
       "kind": "package",
       "packageName": "@api-emulator/vercel",
       "specifier": "./@vercel/api-emulator/src/index.ts",
-      "description": "Vercel API emulator plugin"
+      "description": "Vercel provides deployment platform APIs for projects, builds, domains, environment variables, teams, and accounts."
     }
   }
 }

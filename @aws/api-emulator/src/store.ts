@@ -1,4 +1,4 @@
-import { Store, type Collection } from "@api-emulator/core";
+import type { Store, Collection } from "@api-emulator/core";
 import type { S3Bucket, S3Object, SqsQueue, SqsMessage, IamUser, IamRole } from "./entities.js";
 
 export interface AwsStore {

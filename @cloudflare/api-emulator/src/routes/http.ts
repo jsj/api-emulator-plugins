@@ -1079,7 +1079,7 @@ function registerCloudflareOpenApiAdapter(app: AppLike): void {
 }
 
 function d1Root(): string {
-  return resolve(process.env.CLOUDFLARE_D1_EMU_DIR ?? ".emu/d1");
+  return resolve(process.env.CLOUDFLARE_D1_EMU_DIR ?? ".api-emulator/d1");
 }
 
 function assertD1Name(value: string): void {

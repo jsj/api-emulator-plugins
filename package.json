@@ -9,6 +9,7 @@
     "contract:google-workspace": "node scripts/check-google-workspace-coverage.mjs",
     "contract:plaid": "node scripts/check-plaid-openapi-coverage.mjs",
     "smoke": "node scripts/smoke-all.mjs",
+    "smoke:cli": "bun scripts/cli-verification-smoke.mjs",
     "smoke:db-workspaces": "node @supabase/smoke-db-workspace.mjs && node @neon/smoke-db-workspace.mjs && node @planetscale/smoke-db-workspace.mjs",
     "supabase:dev": "node @supabase/dev.mjs",
     "supabase:pg": "node @supabase/local-postgres/branch.mjs start",
