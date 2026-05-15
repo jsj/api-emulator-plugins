@@ -34,7 +34,7 @@ function createHarness() {
 const harness = createHarness();
 const request = { model: 'gpt-4.1-mini', messages: [{ role: 'user', content: 'hello' }] };
 const first = await harness.call('POST', '/v1/chat/completions', request);
-assert.equal(first.choices[0].message.content, 'forge-openai-emulator-text: hello');
+assert.equal(first.choices[0].message.content, 'openai-emulator-text: hello');
 
 const interactions = harness.data.get('api-emulator:interactions');
 assert.equal(interactions.length, 1);

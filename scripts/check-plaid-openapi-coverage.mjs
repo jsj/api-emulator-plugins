@@ -2,6 +2,8 @@ import { readFile } from 'node:fs/promises';
 
 const OPENAPI_URL = 'https://raw.githubusercontent.com/plaid/plaid-openapi/master/2020-09-14.yml';
 const PLUGIN_SOURCE = new URL('../@plaid/api-emulator/src/index.ts', import.meta.url);
+const ROUTES_SOURCE = new URL('../@plaid/api-emulator/src/routes/http.ts', import.meta.url);
+const FALLBACK_SOURCE = new URL('../@plaid/api-emulator/src/spec/fallback.ts', import.meta.url);
 
 const deepRoutes = [
   '/link/token/create',
@@ -58,19 +60,21 @@ function routeLiteral(path) {
   return `app.post("${path}"`;
 }
 
-const [openapi, pluginSource] = await Promise.all([
+const [openapi, pluginSource, routesSource, fallbackSource] = await Promise.all([
   loadOpenApi(),
   readFile(PLUGIN_SOURCE, 'utf8'),
+  readFile(ROUTES_SOURCE, 'utf8'),
+  readFile(FALLBACK_SOURCE, 'utf8'),
 ]);
 
 const operations = parseOpenApiOperations(openapi);
 const failures = [];
 const fallbackPresent =
-  pluginSource.includes('function registerFallbackRoutes') &&
-  pluginSource.includes('app.post("*", fallback)') &&
-  pluginSource.includes('app.post("/*", fallback)') &&
-  pluginSource.includes('app.get?.("*", fallback)') &&
-  pluginSource.includes('app.get?.("/*", fallback)');
+  fallbackSource.includes('function registerFallbackRoutes') &&
+  fallbackSource.includes('app.post("*", fallback)') &&
+  fallbackSource.includes('app.post("/*", fallback)') &&
+  fallbackSource.includes('app.get?.("*", fallback)') &&
+  fallbackSource.includes('app.get?.("/*", fallback)');
 
 if (operations.length < 300) {
   failures.push(`Plaid OpenAPI parse found too few operations: ${operations.length}`);
@@ -89,7 +93,7 @@ for (const path of deepRoutes) {
   if (!operations.some((operation) => operation.path === path)) {
     failures.push(`deep Plaid route not present in OpenAPI: ${path}`);
   }
-  if (!pluginSource.includes(routeLiteral(path))) {
+  if (!routesSource.includes(routeLiteral(path))) {
     failures.push(`deep Plaid route not implemented: ${path}`);
   }
 }
