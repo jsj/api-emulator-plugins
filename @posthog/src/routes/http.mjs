@@ -46,7 +46,41 @@ function saveEvent(store, event) {
 }
 
 async function parseBody(c) {
-  return c.req.json().catch(() => ({}));
+  const contentType = c.req.header?.('content-type') ?? '';
+  const encoding = c.req.header?.('content-encoding') ?? '';
+  const compression = c.req.query?.('compression') ?? '';
+  if (contentType.includes('application/json')) {
+    return c.req.json().catch(() => ({}));
+  }
+  if (!c.req.text) return c.req.json().catch(() => ({}));
+  const raw = await c.req.text?.().catch(() => '') ?? '';
+  const text = (encoding === 'gzip' || compression === 'gzip-js') ? await decodeGzipText(raw) : raw;
+  if (contentType.includes('application/x-www-form-urlencoded')) {
+    const params = new URLSearchParams(text);
+    if (params.has('data')) return parseJsonish(params.get('data'));
+    return Object.fromEntries(params.entries());
+  }
+  return parseJsonish(text);
+}
+
+function parseJsonish(value) {
+  if (!value) return {};
+  if (typeof value === 'object') return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return {};
+  }
+}
+
+async function decodeGzipText(value) {
+  try {
+    const bytes = typeof Buffer !== 'undefined' ? Buffer.from(value, 'binary') : new TextEncoder().encode(value);
+    const stream = new Response(bytes).body.pipeThrough(new DecompressionStream('gzip'));
+    return await new Response(stream).text();
+  } catch {
+    return value;
+  }
 }
 
 function normalizeEvent(body, source) {
@@ -61,7 +95,7 @@ function normalizeEvent(body, source) {
 }
 
 function hasValidApiKey(next, body, c) {
-  const key = body.api_key ?? body.token ?? c.req.header?.('authorization')?.replace(/^Bearer\s+/i, '');
+  const key = body.api_key ?? body.token ?? body.properties?.token ?? c.req.header?.('authorization')?.replace(/^Bearer\s+/i, '');
   return !key || next.apiKeys.includes(key);
 }
 
@@ -182,8 +216,30 @@ export function registerRoutes(app, store, contract) {
     saveEvent(store, event);
     return c.json({ status: 1, event_uuid: event.uuid });
   });
+  app.post('/capture/', async (c) => {
+    const body = await parseBody(c);
+    const next = state(store);
+    if (!hasValidApiKey(next, body, c)) return c.json({ type: 'authentication_error', detail: 'Invalid API key' }, 401);
+    if (!body.event) return c.json({ type: 'validation_error', detail: 'event is required' }, 400);
+    const event = normalizeEvent(body, 'capture');
+    saveEvent(store, event);
+    return c.json({ status: 1, event_uuid: event.uuid });
+  });
 
   app.post('/batch', async (c) => {
+    const body = await parseBody(c);
+    const next = state(store);
+    if (!hasValidApiKey(next, body, c)) return c.json({ type: 'authentication_error', detail: 'Invalid API key' }, 401);
+    const batch = Array.isArray(body.batch) ? body.batch : [];
+    if (!Array.isArray(body.batch)) return c.json({ type: 'validation_error', detail: 'batch must be an array' }, 400);
+    const captured = batch.map((item) => {
+      const event = normalizeEvent(item, 'batch');
+      saveEvent(store, event);
+      return event;
+    });
+    return c.json({ status: 1, captured: captured.length });
+  });
+  app.post('/batch/', async (c) => {
     const body = await parseBody(c);
     const next = state(store);
     if (!hasValidApiKey(next, body, c)) return c.json({ type: 'authentication_error', detail: 'Invalid API key' }, 401);
@@ -201,6 +257,28 @@ export function registerRoutes(app, store, contract) {
     const body = await parseBody(c);
     if (!hasValidApiKey(state(store), body, c)) return c.json({ type: 'authentication_error', detail: 'Invalid API key' }, 401);
     const event = normalizeEvent(body, 'e');
+    saveEvent(store, event);
+    return c.json({ status: 1, event_uuid: event.uuid });
+  });
+  app.post('/e/', async (c) => {
+    const body = await parseBody(c);
+    if (!hasValidApiKey(state(store), body, c)) return c.json({ type: 'authentication_error', detail: 'Invalid API key' }, 401);
+    const event = normalizeEvent(body, 'e');
+    saveEvent(store, event);
+    return c.json({ status: 1, event_uuid: event.uuid });
+  });
+
+  app.post('/track', async (c) => {
+    const body = await parseBody(c);
+    if (!hasValidApiKey(state(store), body, c)) return c.json({ type: 'authentication_error', detail: 'Invalid API key' }, 401);
+    const event = normalizeEvent(body, 'track');
+    saveEvent(store, event);
+    return c.json({ status: 1, event_uuid: event.uuid });
+  });
+  app.post('/track/', async (c) => {
+    const body = await parseBody(c);
+    if (!hasValidApiKey(state(store), body, c)) return c.json({ type: 'authentication_error', detail: 'Invalid API key' }, 401);
+    const event = normalizeEvent(body, 'track');
     saveEvent(store, event);
     return c.json({ status: 1, event_uuid: event.uuid });
   });
@@ -249,6 +327,15 @@ export function registerRoutes(app, store, contract) {
 
   app.get('/decide', (c) => c.json({ config: { enable_collect_everything: false }, isAuthenticated: true, ...evaluateFlags(state(store), c.req.query('distinct_id') ?? 'anonymous') }));
   app.post('/decide', async (c) => {
+    const body = await parseBody(c);
+    return c.json({ config: { enable_collect_everything: false }, isAuthenticated: true, ...evaluateFlags(state(store), body.distinct_id ?? body.distinctId ?? 'anonymous', body.groups ?? {}) });
+  });
+  app.post('/flags/', async (c) => {
+    const body = await parseBody(c);
+    if (!hasValidApiKey(state(store), body, c)) return c.json({ type: 'authentication_error', detail: 'Invalid API key' }, 401);
+    return c.json(evaluateFlags(state(store), body.distinct_id ?? body.distinctId ?? 'anonymous', body.groups ?? {}));
+  });
+  app.post('/decide/', async (c) => {
     const body = await parseBody(c);
     return c.json({ config: { enable_collect_everything: false }, isAuthenticated: true, ...evaluateFlags(state(store), body.distinct_id ?? body.distinctId ?? 'anonymous', body.groups ?? {}) });
   });
@@ -339,6 +426,7 @@ export function registerRoutes(app, store, contract) {
   });
 
   app.get('/inspect/contract', (c) => c.json(contract));
+  app.get('/_inspector', (c) => c.json(state(store)));
   app.get('/inspect/state', (c) => c.json(state(store)));
   app.get('/inspect/events', (c) => c.json(events(store)));
   app.get('/inspect/persons', (c) => c.json(state(store).persons));

@@ -6,17 +6,41 @@
       "specifier": "./@apple/api-emulator/src/index.ts",
       "description": "Apple API emulator plugin"
     },
+    "adyen": {
+      "kind": "package",
+      "packageName": "@api-emulator/adyen",
+      "specifier": "./@adyen/api-emulator.mjs",
+      "description": "Adyen API emulator plugin"
+    },
+    "auth0": {
+      "kind": "package",
+      "packageName": "@api-emulator/auth0",
+      "specifier": "./@auth0/api-emulator/src/index.ts",
+      "description": "Auth0 API emulator plugin"
+    },
     "aws": {
       "kind": "package",
       "packageName": "@api-emulator/aws",
       "specifier": "./@aws/api-emulator/src/index.ts",
       "description": "AWS API emulator plugin"
     },
+    "browserbase": {
+      "kind": "package",
+      "packageName": "@api-emulator/browserbase",
+      "specifier": "./@browserbase/api-emulator.mjs",
+      "description": "Browserbase API emulator plugin"
+    },
     "clerk": {
       "kind": "package",
       "packageName": "@api-emulator/clerk",
       "specifier": "./@clerk/api-emulator/src/index.ts",
       "description": "Clerk API emulator plugin"
+    },
+    "discord": {
+      "kind": "package",
+      "packageName": "@api-emulator/discord",
+      "specifier": "./@discord/api-emulator/src/index.ts",
+      "description": "Discord API emulator plugin"
     },
     "github": {
       "kind": "package",
@@ -42,17 +66,59 @@
       "specifier": "./@mongoatlas/api-emulator/src/index.ts",
       "description": "MongoDB Atlas API emulator plugin"
     },
+    "mixpanel": {
+      "kind": "package",
+      "packageName": "@api-emulator/mixpanel",
+      "specifier": "./@mixpanel/api-emulator.mjs",
+      "description": "Mixpanel API emulator plugin"
+    },
+    "neon": {
+      "kind": "package",
+      "packageName": "@api-emulator/neon",
+      "specifier": "./@neon/api-emulator.mjs",
+      "description": "Neon API emulator plugin"
+    },
+    "netlify": {
+      "kind": "package",
+      "packageName": "@api-emulator/netlify",
+      "specifier": "./@netlify/api-emulator.mjs",
+      "description": "Netlify API emulator plugin"
+    },
     "okta": {
       "kind": "package",
       "packageName": "@api-emulator/okta",
       "specifier": "./@okta/api-emulator/src/index.ts",
       "description": "Okta API emulator plugin"
     },
+    "posthog": {
+      "kind": "package",
+      "packageName": "@api-emulator/posthog",
+      "specifier": "./@posthog/api-emulator.mjs",
+      "description": "PostHog API emulator plugin"
+    },
+    "planetscale": {
+      "kind": "package",
+      "packageName": "@api-emulator/planetscale",
+      "specifier": "./@planetscale/api-emulator.mjs",
+      "description": "PlanetScale API emulator plugin"
+    },
+    "privy": {
+      "kind": "package",
+      "packageName": "@api-emulator/privy",
+      "specifier": "./@privy/api-emulator.mjs",
+      "description": "Privy API emulator plugin"
+    },
     "resend": {
       "kind": "package",
       "packageName": "@api-emulator/resend",
       "specifier": "./@resend/api-emulator/src/index.ts",
       "description": "Resend API emulator plugin"
+    },
+    "sentry": {
+      "kind": "package",
+      "packageName": "@api-emulator/sentry",
+      "specifier": "./@sentry/api-emulator.mjs",
+      "description": "Sentry API emulator plugin"
     },
     "slack": {
       "kind": "package",
@@ -65,6 +131,30 @@
       "packageName": "@api-emulator/stripe",
       "specifier": "./@stripe/api-emulator/src/index.ts",
       "description": "Stripe API emulator plugin"
+    },
+    "supabase": {
+      "kind": "package",
+      "packageName": "@api-emulator/supabase",
+      "specifier": "./@supabase/api-emulator.mjs",
+      "description": "Supabase API emulator plugin"
+    },
+    "telegram": {
+      "kind": "package",
+      "packageName": "@api-emulator/telegram",
+      "specifier": "./@telegram/api-emulator/src/index.ts",
+      "description": "Telegram Bot API emulator plugin"
+    },
+    "twilio": {
+      "kind": "package",
+      "packageName": "@api-emulator/twilio",
+      "specifier": "./@twilio/api-emulator/src/index.ts",
+      "description": "Twilio API emulator plugin"
+    },
+    "upstash": {
+      "kind": "package",
+      "packageName": "@api-emulator/upstash",
+      "specifier": "./@upstash/api-emulator.mjs",
+      "description": "Upstash API emulator plugin"
     },
     "vercel": {
       "kind": "package",
