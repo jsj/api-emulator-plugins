@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 
 const OPENAPI_URL = 'https://raw.githubusercontent.com/cloudflare/api-schemas/main/openapi.yaml';
 const PLUGIN_SOURCE = new URL('../@cloudflare/api-emulator/src/index.ts', import.meta.url);
+const ROUTES_SOURCE = new URL('../@cloudflare/api-emulator/src/routes/http.ts', import.meta.url);
 
 const requiredOperations = [
   {
@@ -86,17 +87,18 @@ function hasOpenApiOperation(openapi, operation) {
   return pathBlock.includes(`        ${operation.method}:`);
 }
 
-const [openapi, pluginSource] = await Promise.all([
+const [openapi, pluginSource, routesSource] = await Promise.all([
   loadOpenApi(),
   readFile(PLUGIN_SOURCE, 'utf8'),
+  readFile(ROUTES_SOURCE, 'utf8'),
 ]);
 
 const failures = [];
 const operations = parseOpenApiOperations(openapi);
 const openApiAdapterPresent =
-  pluginSource.includes('function registerCloudflareOpenApiAdapter') &&
-  pluginSource.includes('"/client/v4/*"') &&
-  pluginSource.includes('cloudflareEnvelope');
+  routesSource.includes('function registerCloudflareOpenApiAdapter') &&
+  routesSource.includes('"/client/v4/*"') &&
+  routesSource.includes('cloudflareEnvelope');
 
 if (operations.length < 1000) {
   failures.push(`full Cloudflare OpenAPI parse found too few operations: ${operations.length}`);
@@ -108,7 +110,7 @@ if (!openApiAdapterPresent) {
 
 const uncoveredOperations = openApiAdapterPresent
   ? []
-  : operations.filter((operation) => !pluginSource.includes(operation.emulatorPath));
+  : operations.filter((operation) => !routesSource.includes(operation.emulatorPath));
 
 for (const operation of uncoveredOperations.slice(0, 20)) {
   failures.push(`uncovered OpenAPI operation: ${operation.method.toUpperCase()} ${operation.openapiPath}`);
@@ -118,7 +120,7 @@ for (const operation of requiredOperations) {
   if (!hasOpenApiOperation(openapi, operation)) {
     failures.push(`${operation.name}: missing ${operation.method.toUpperCase()} ${operation.openapiPath} in Cloudflare OpenAPI`);
   }
-  if (!pluginSource.includes(operation.pluginRoute)) {
+  if (!routesSource.includes(operation.pluginRoute)) {
     failures.push(`${operation.name}: missing emulator route ${operation.pluginRoute}`);
   }
 }
