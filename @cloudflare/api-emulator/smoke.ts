@@ -156,6 +156,13 @@ const d1PromotedResponse = await app.request("POST", `/client/v4/accounts/test/d
   sql: "SELECT name FROM sqlite_master WHERE name = 'branch_only'",
 });
 assertEqual((await d1PromotedResponse.json() as any).result[0].results[0].name, "branch_only");
+await app.request("POST", `/_emu/d1/databases/${routesDb}/branches`, { name: "agent_branch_delete_smoke" });
+await app.request("DELETE", `/_emu/d1/databases/${routesDb}/branches/agent_branch_delete_smoke`);
+const d1BranchesResponse = await app.request("GET", `/_emu/d1/databases/${routesDb}/branches`);
+assertEqual((await d1BranchesResponse.json() as any).data.some((item: any) => item.branch === "agent_branch_delete_smoke"), false);
+await app.request("POST", `/_emu/db/cloudflare-d1/databases/${routesDb}/branches`, { name: "agent_branch_normalized_smoke" });
+const d1NormalizedDiff = await app.request("GET", `/_emu/db/cloudflare-d1/databases/${routesDb}/branches/agent_branch_normalized_smoke/diff`);
+assertEqual((await d1NormalizedDiff.json() as any).provider, "cloudflare-d1");
 
 await app.request("POST", "/client/v4/accounts/test/storage/kv/namespaces", { title: "ROUTE_KV" });
 await app.request("PUT", "/client/v4/accounts/test/storage/kv/namespaces/ROUTE_KV/values/greeting", "hello-route");

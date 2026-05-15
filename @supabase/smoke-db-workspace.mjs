@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import { branch, deleteBranch, diffBranch, execSql, start } from './local-postgres/branch.mjs';
+import { registerRoutes } from './src/routes/http.mjs';
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -8,6 +9,48 @@ function assert(condition, message) {
 async function scalar(db, sql) {
   const out = await execSql(db, `copy (${sql}) to stdout`);
   return out.trim();
+}
+
+function createHarness() {
+  const routes = new Map();
+  const data = new Map();
+  const app = {
+    get: (path, handler) => routes.set(`GET ${path}`, handler),
+    post: (path, handler) => routes.set(`POST ${path}`, handler),
+    delete: (path, handler) => routes.set(`DELETE ${path}`, handler),
+  };
+  const store = {
+    getData: (key) => data.get(key),
+    setData: (key, value) => data.set(key, value),
+  };
+  registerRoutes(app, store, { provider: 'supabase' });
+  return {
+    async call(method, path, body = {}, params = {}) {
+      const handler = routes.get(`${method} ${path}`);
+      assert(handler, `missing route ${method} ${path}`);
+      let status = 200;
+      let payload;
+      await handler({
+        req: {
+          json: async () => body,
+          header: () => undefined,
+          param: (name) => params[name],
+          query: () => undefined,
+        },
+        json: (value, nextStatus = 200) => {
+          status = nextStatus;
+          payload = value;
+          return { status, payload };
+        },
+        body: (value, nextStatus = 200) => {
+          status = nextStatus;
+          payload = value;
+          return { status, payload };
+        },
+      });
+      return { status, payload };
+    },
+  };
 }
 
 function commandAvailable(command) {
@@ -38,6 +81,14 @@ try {
   assert(Number(await scalar('postgres', 'select count(*) from storage.buckets')) > 0, 'storage.buckets should be queryable');
   assert(Number(await scalar('postgres', 'select count(*) from storage.objects')) > 0, 'storage.objects should be queryable');
 
+  const harness = createHarness();
+  const bucketId = `agent-smoke-${Date.now()}`;
+  const objectName = 'route-object.txt';
+  await harness.call('POST', '/storage/v1/bucket', { id: bucketId, name: bucketId, public: true }, {});
+  await harness.call('POST', '/storage/v1/object/:bucket/:path', { content: 'route-backed', metadata: { size: '12', mimetype: 'text/plain' } }, { bucket: bucketId, path: objectName });
+  assert(await scalar('postgres', `select count(*) from storage.buckets where id = '${bucketId}'`) === '1', 'storage bucket route should insert into Postgres');
+  assert(await scalar('postgres', `select count(*) from storage.objects where bucket_id = '${bucketId}' and name = '${objectName}'`) === '1', 'storage object route should insert into Postgres');
+
   await branch('postgres', branchName);
   await execSql(branchName, 'create table public.agent_smoke_table (id serial primary key, value text); insert into public.agent_smoke_table (value) values (\'branch-only\');');
 
@@ -48,6 +99,10 @@ try {
 
   const diff = await diffBranch(branchName);
   assert(diff.schema.addedTables.includes('public.agent_smoke_table'), 'diff should include added branch table');
+  const normalizedDiff = await harness.call('GET', '/_emu/db/supabase/databases/:id/branches/:branch/diff', {}, { id: 'postgres', branch: branchName });
+  assert(normalizedDiff.payload.schema.addedTables.includes('public.agent_smoke_table'), 'normalized Supabase diff route should include added branch table');
+  const normalizedExport = await harness.call('GET', '/_emu/db/supabase/databases/:id/branches/:branch/export', {}, { id: 'postgres', branch: branchName });
+  assert(normalizedExport.payload.sql.includes('agent_smoke_table'), 'normalized Supabase export route should include branch schema');
 
   console.log('Supabase DB workspace smoke passed.');
 } finally {

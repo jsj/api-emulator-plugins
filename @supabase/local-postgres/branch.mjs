@@ -227,7 +227,7 @@ function changed(left, right, key) {
   return right.filter((item) => leftMap.has(key(item)) && leftMap.get(key(item)) !== JSON.stringify(item));
 }
 
-async function diffBranch(branchName, parent = 'postgres') {
+async function diffBranch(branchName, parent = 'postgres', provider = 'supabase') {
   assertDatabaseName(branchName);
   assertDatabaseName(parent);
   const [parentSchema, branchSchema, parentCounts, branchCounts] = await Promise.all([
@@ -243,7 +243,7 @@ async function diffBranch(branchName, parent = 'postgres') {
     .filter((name) => parentCounts[name] !== branchCounts[name])
     .map((name) => ({ name, parentRows: parentCounts[name] ?? 0, branchRows: branchCounts[name] ?? 0 }));
   return {
-    provider: 'supabase',
+    provider,
     database: parent,
     branch: branchName,
     schema: {
@@ -256,6 +256,15 @@ async function diffBranch(branchName, parent = 'postgres') {
     },
     data: { changedTables },
   };
+}
+
+async function exportBranch(db) {
+  assertDatabaseName(db);
+  await waitForPostgres();
+  return execInContainer(['pg_dump', '-U', user, '--no-owner', '--no-privileges', db], {
+    env: [`PGPASSWORD=${password}`],
+    capture: true,
+  });
 }
 
 async function promoteBranch(branchName, parent = 'postgres') {
@@ -283,7 +292,7 @@ function printEnv(db) {
   console.log(`psql ${url}`);
 }
 
-export { start, branch, reset, execSql, listBranches, deleteBranch, diffBranch, promoteBranch };
+export { start, branch, reset, execSql, listBranches, deleteBranch, diffBranch, exportBranch, promoteBranch };
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const [command, first, second] = process.argv.slice(2);

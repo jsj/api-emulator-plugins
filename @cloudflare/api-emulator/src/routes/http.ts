@@ -719,6 +719,56 @@ function d1Routes(app: AppLike): void {
     d1Databases.set(id, new FileD1Database(d1MainPath(id)));
     return c.json({ ok: true });
   });
+  app.post("/_emu/db/cloudflare-d1/databases", async (c: any) => {
+    const body = await contextJson(c);
+    const id = String(body?.id ?? body?.name ?? crypto.randomUUID());
+    database(id);
+    return c.json({ id, path: d1MainPath(id) }, 201);
+  });
+  app.get?.("/_emu/db/cloudflare-d1/databases", (c: any) =>
+    c.json({ data: Array.from(d1Databases.keys()).filter((id) => !id.includes(":")).map((id) => ({ id, path: d1MainPath(id) })) }),
+  );
+  app.post("/_emu/db/cloudflare-d1/databases/:id/branches", async (c: any) => {
+    const body = await contextJson(c);
+    const id = c.req.param("id");
+    database(id);
+    const branch = String(body?.name ?? body?.branch ?? `agent_branch_${crypto.randomUUID().replaceAll("-", "").slice(0, 12)}`);
+    assertD1Name(branch);
+    mkdirSync(dirname(d1BranchPath(id, branch)), { recursive: true });
+    copyFileSync(d1MainPath(id), d1BranchPath(id, branch));
+    d1BranchesFor(id).add(branch);
+    d1Databases.set(d1BranchKey(id, branch), new FileD1Database(d1BranchPath(id, branch)));
+    return c.json({ id, branch, path: d1BranchPath(id, branch) }, 201);
+  });
+  app.get?.("/_emu/db/cloudflare-d1/databases/:id/branches", (c: any) =>
+    c.json({ data: Array.from(d1BranchesFor(c.req.param("id"))).map((branch) => ({ branch, path: d1BranchPath(c.req.param("id"), branch) })) }),
+  );
+  app.delete?.("/_emu/db/cloudflare-d1/databases/:id/branches/:branch", (c: any) => {
+    const id = c.req.param("id");
+    const branch = c.req.param("branch");
+    d1Databases.delete(d1BranchKey(id, branch));
+    d1BranchesFor(id).delete(branch);
+    rmSync(d1BranchPath(id, branch), { force: true });
+    return c.json({ ok: true });
+  });
+  app.post("/_emu/db/cloudflare-d1/databases/:id/branches/:branch/exec", async (c: any) => {
+    const body = await contextJson(c);
+    const result = await branchDatabase(c.req.param("id"), c.req.param("branch")).exec(String(body?.sql ?? ""));
+    return c.json({ result });
+  });
+  app.get?.("/_emu/db/cloudflare-d1/databases/:id/branches/:branch/export", (c: any) =>
+    c.json({ sql: branchDatabase(c.req.param("id"), c.req.param("branch")).exportSql() }),
+  );
+  app.get?.("/_emu/db/cloudflare-d1/databases/:id/branches/:branch/diff", (c: any) =>
+    c.json(diffD1(c.req.param("id"), c.req.param("branch"))),
+  );
+  app.post("/_emu/db/cloudflare-d1/databases/:id/branches/:branch/promote", (c: any) => {
+    const id = c.req.param("id");
+    const branch = c.req.param("branch");
+    copyFileSync(d1BranchPath(id, branch), d1MainPath(id));
+    d1Databases.set(id, new FileD1Database(d1MainPath(id)));
+    return c.json({ ok: true });
+  });
 }
 
 function kvRoutes(app: AppLike): void {
@@ -1156,7 +1206,14 @@ class FileD1Database {
   }
 
   private sqlite(sql: string, flags: string[] = []): string {
-    return execFileSync("sqlite3", [...flags, this.filePath, sql], { encoding: "utf8" }).trim();
+    try {
+      return execFileSync("sqlite3", [...flags, this.filePath, sql], { encoding: "utf8" }).trim();
+    } catch (error) {
+      if ((error as { code?: string }).code === "ENOENT") {
+        throw new Error("Cloudflare D1 emulator requires the sqlite3 CLI. Install sqlite3 or set CLOUDFLARE_D1_EMU_DIR for a writable SQLite workspace.");
+      }
+      throw error;
+    }
   }
 }
 
