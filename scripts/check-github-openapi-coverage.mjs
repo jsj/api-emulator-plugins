@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 
 const OPENAPI_URL = 'https://raw.githubusercontent.com/github/rest-api-description/main/descriptions/api.github.com/api.github.com.json';
 const PLUGIN_SOURCE = new URL('../@github/api-emulator.mjs', import.meta.url);
+const ROUTES_SOURCE = new URL('../@github/src/routes/http.mjs', import.meta.url);
 
 const deepRoutes = [
   {
@@ -66,18 +67,19 @@ function parseOpenApiOperations(openapi) {
   return operations;
 }
 
-const [openapi, pluginSource] = await Promise.all([
+const [openapi, pluginSource, routesSource] = await Promise.all([
   loadOpenApi(),
   readFile(PLUGIN_SOURCE, 'utf8'),
+  readFile(ROUTES_SOURCE, 'utf8'),
 ]);
 
 const operations = parseOpenApiOperations(openapi);
 const failures = [];
 const fallbackPresent =
   pluginSource.includes('stateful-core-plus-openapi-compatible-generic-fallback') &&
-  pluginSource.includes('function genericOpenApiPayload') &&
-  pluginSource.includes("app.get('*', fallback)") &&
-  pluginSource.includes("app.post('*', fallback)");
+  routesSource.includes('function genericOpenApiPayload') &&
+  routesSource.includes("app.get('*', fallback)") &&
+  routesSource.includes("app.post('*', fallback)");
 
 if (operations.length < 1000) {
   failures.push(`GitHub OpenAPI parse found too few operations: ${operations.length}`);
@@ -92,7 +94,7 @@ for (const route of deepRoutes) {
   if (!operation) {
     failures.push(`${route.name}: missing ${route.method.toUpperCase()} ${route.openapiPath} in GitHub OpenAPI`);
   }
-  if (!pluginSource.includes(route.pluginRoute)) {
+  if (!routesSource.includes(route.pluginRoute)) {
     failures.push(`${route.name}: missing emulator route ${route.pluginRoute}`);
   }
 }

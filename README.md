@@ -32,7 +32,7 @@ Generate seed config for a plugin:
 
 ```bash
 npx -p api-emulator api init \
-  --plugin ./api-emulator-plugins/@alpaca/trading-emulator/src/index.ts \
+  --plugin ./api-emulator-plugins/@alpaca/api-emulator/src/index.ts \
   --service alpaca
 ```
 
@@ -62,7 +62,7 @@ openai.resetToFixture(fixture)
 
 | Plugin | Path | Scope |
 | --- | --- | --- |
-| Alpaca | `@alpaca/trading-emulator/src/index.ts` | Trading account, orders, positions, clock, market data snapshots and bars |
+| Alpaca | `@alpaca/api-emulator/src/index.ts` | Trading account, orders, positions, clock, market data snapshots and bars |
 | Anthropic | `@anthropic/api-emulator.mjs` | Messages API |
 | Apple | `@apple/api-emulator.mjs` | AMS auth, APNS, App Store Connect apps, builds, uploads, review submissions |
 | Cloudflare | `@cloudflare/api-emulator/src/index.ts` | Workers-style bindings, D1, KV, R2, queues, durable objects, service bindings |

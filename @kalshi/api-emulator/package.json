@@ -1,5 +1,5 @@
 {
-  "name": "@kalshi/trading-emulator",
+  "name": "@kalshi/api-emulator",
   "private": true,
   "type": "module",
   "exports": {

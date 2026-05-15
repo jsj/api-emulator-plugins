@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { plugin, contract } from './trading-emulator/src/index.ts';
+import { plugin, contract } from './api-emulator/src/index.ts';
 
 function createCollection() {
   let nextId = 1;

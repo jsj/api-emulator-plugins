@@ -1,5 +1,5 @@
 {
-  "name": "@alpaca/trading-emulator",
+  "name": "@alpaca/api-emulator",
   "private": true,
   "type": "module",
   "exports": {

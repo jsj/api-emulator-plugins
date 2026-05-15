@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-const source = readFileSync(new URL('./trading-emulator/src/index.ts', import.meta.url), 'utf8');
+const source = [
+  readFileSync(new URL('./api-emulator/src/index.ts', import.meta.url), 'utf8'),
+  readFileSync(new URL('./api-emulator/src/routes/http.ts', import.meta.url), 'utf8'),
+].join('\n');
 
 const requiredRoutes = [
   '/v2/account',
