@@ -1,0 +1,44 @@
+{
+  "name": "@api-emulator/notion",
+  "version": "0.1.0",
+  "license": "MIT",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "homepage": "https://api-emulator.jsj.sh",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jsj/api-emulator.git",
+    "directory": "@notion/api-emulator"
+  },
+  "bugs": {
+    "url": "https://github.com/jsj/api-emulator/issues"
+  },
+  "scripts": {
+    "build": "tsup --clean",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "clean": "rm -rf dist .turbo",
+    "type-check": "tsc --noEmit",
+    "lint": "eslint src"
+  },
+  "dependencies": {
+    "hono": "^4",
+    "@api-emulator/core": "^0.6.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.1",
+    "eslint": "^9.39.1",
+    "tsup": "^8",
+    "typescript-eslint": "^8.46.4",
+    "typescript": "^5.7",
+    "vitest": "^4.1.0"
+  },
+  "peerDependencies": {
+    "api-emulator": ">=0.6.0"
+  },
+  "private": true
+}
