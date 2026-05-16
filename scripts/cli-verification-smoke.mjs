@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { spawn } from 'node:child_process';
-import { createServer } from 'node:http';
+import { commandPath, createApp, run, Store, withServer } from './cli-smoke-runtime.mjs';
 import { generateKeyPairSync } from 'node:crypto';
 
 import { customerRoutes } from '../@stripe/api-emulator/src/routes/customers.ts';
@@ -15,7 +15,9 @@ import { plugin as alpacaPlugin } from '../@alpaca/api-emulator/src/index.ts';
 import { developerToken as appleMusicDeveloperToken, plugin as appleMusicPlugin } from '../@apple-music/api-emulator.mjs';
 import { plugin as audiblePlugin } from '../@audible/api-emulator.mjs';
 import { plugin as goodreadsPlugin } from '../@goodreads/api-emulator.mjs';
+import { plugin as wikipediaPlugin } from '../@wikipedia/api-emulator.mjs';
 import { plugin as googlePlugin } from '../@google/api-emulator.mjs';
+import { plugin as googleFormsPlugin } from '../@google-forms/api-emulator.mjs';
 import { plugin as googlePlayPlugin } from '../@google-play/api-emulator.mjs';
 import { plugin as huggingFacePlugin } from '../@huggingface/api-emulator.mjs';
 import { plugin as kubernetesPlugin, seedFromConfig as seedKubernetes } from '../@kubernetes/api-emulator/index.mjs';
@@ -24,13 +26,16 @@ import { plugin as lucentPlugin } from '../@lucent/api-emulator.mjs';
 import { plugin as metaPlugin, seedFromConfig as seedMeta } from '../@meta/api-emulator.mjs';
 import { plugin as nextdoorPlugin } from '../@nextdoor/api-emulator.mjs';
 import { plugin as oculusPlugin, seedFromConfig as seedOculus } from '../@oculus/api-emulator.mjs';
+import { plugin as playstationPlugin } from '../@playstation/api-emulator.mjs';
 import { plugin as snapPlugin, seedFromConfig as seedSnap } from '../@snap/api-emulator.mjs';
 import { plugin as appLovinPlugin, seedFromConfig as seedAppLovin } from '../@applovin/api-emulator.mjs';
+import { plugin as unityAdsPlugin } from '../@unity-ads/api-emulator.mjs';
 import { plugin as argoPlugin, seedFromConfig as seedArgo } from '../@argo/api-emulator.mjs';
 import { plugin as openaiPlugin } from '../@openai/api-emulator.mjs';
 import { plugin as plaidPlugin } from '../@plaid/api-emulator/src/index.ts';
 import { plugin as salesforcePlugin } from '../@salesforce/api-emulator.mjs';
 import { plugin as sentryPlugin } from '../@sentry/api-emulator.mjs';
+import { plugin as silurianPlugin } from '../@silurian/api-emulator.mjs';
 import { plugin as sierraPlugin } from '../@sierra/api-emulator.mjs';
 import { plugin as skyscannerPlugin } from '../@skyscanner/api-emulator.mjs';
 import { plugin as spotifyPlugin } from '../@spotify/api-emulator.mjs';
@@ -75,253 +80,17 @@ import { plugin as stainlessPlugin } from '../@stainless/api-emulator.mjs';
 import { plugin as turbotaxPlugin } from '../@turbotax/api-emulator.mjs';
 import { plugin as usaaPlugin } from '../@usaa/api-emulator.mjs';
 import { plugin as workdayPlugin } from '../@workday/api-emulator.mjs';
-
-class Collection {
-  constructor(indexes = []) {
-    this.rows = [];
-    this.indexes = indexes;
-    this.nextId = 1;
-  }
-
-  insert(row) {
-    const next = {
-      id: this.nextId++,
-      created_at: new Date().toISOString(),
-      ...row,
-    };
-    this.rows.push(next);
-    return next;
-  }
-
-  all() {
-    return [...this.rows];
-  }
-
-  findOneBy(key, value) {
-    return this.rows.find((row) => row[key] === value);
-  }
-
-  findBy(key, value) {
-    return this.rows.filter((row) => row[key] === value);
-  }
-
-  update(id, patch) {
-    const row = this.rows.find((item) => item.id === id);
-    if (!row) return undefined;
-    Object.assign(row, patch);
-    return row;
-  }
-
-  delete(id) {
-    this.rows = this.rows.filter((row) => row.id !== id);
-  }
-
-  clear() {
-    this.rows = [];
-  }
-}
-
-class Store {
-  constructor() {
-    this.data = new Map();
-    this.collections = new Map();
-  }
-
-  getData(key) {
-    return this.data.get(key);
-  }
-
-  setData(key, value) {
-    if (value === null) this.data.delete(key);
-    else this.data.set(key, value);
-  }
-
-  collection(name, indexes = []) {
-    if (!this.collections.has(name)) {
-      this.collections.set(name, new Collection(indexes));
-    }
-    return this.collections.get(name);
-  }
-}
-
-function createApp() {
-  const routes = [];
-  const add = (method, path, handler) => routes.push({ method, path, handler });
-  return {
-    routes,
-    get: (path, handler) => add('GET', path, handler),
-    post: (path, handler) => add('POST', path, handler),
-    put: (path, handler) => add('PUT', path, handler),
-    patch: (path, handler) => add('PATCH', path, handler),
-    delete: (path, handler) => add('DELETE', path, handler),
-    all: (path, handler) => add('ALL', path, handler),
-    use: () => undefined,
-    on: (method, path, handler) => add(method, path, handler),
-  };
-}
-
-function matchRoute(routePath, requestPath) {
-  const routeParts = routePath.split('/').filter(Boolean);
-  const requestParts = requestPath.split('/').filter(Boolean);
-  const params = {};
-  for (let i = 0, j = 0; i < routeParts.length; i += 1, j += 1) {
-    const part = routeParts[i];
-    if (part === '*') {
-      params['*'] = requestParts.slice(j).join('/');
-      return params;
-    }
-    const rest = part.match(/^:([^{}]+)\{\.\+\}$/);
-    if (rest) {
-      params[rest[1]] = requestParts.slice(j).join('/');
-      return params;
-    }
-    if (j >= requestParts.length) return null;
-    if (part.startsWith(':')) {
-      params[part.slice(1)] = decodeURIComponent(requestParts[j]);
-    } else if (part !== requestParts[j]) {
-      return null;
-    }
-  }
-  return routeParts.length === requestParts.length ? params : null;
-}
-
-function routeScore(routePath) {
-  return routePath
-    .split('/')
-    .filter(Boolean)
-    .reduce(
-      (score, part) => {
-        if (part === '*') return score;
-        if (part.startsWith(':')) return score + 1;
-        return score + 100;
-      },
-      routePath === '/' ? 100 : 0,
-    );
-}
-
-function createContext(req, res, params, requestUrl, rawBody) {
-  const headers = Object.fromEntries(Object.entries(req.headers).map(([key, value]) => [key.toLowerCase(), Array.isArray(value) ? value.join(',') : value]));
-  const url = new URL(requestUrl);
-  const send = (body, status = 200, extraHeaders = {}) => {
-    res.statusCode = status;
-    for (const [key, value] of Object.entries(extraHeaders)) res.setHeader(key, value);
-    if (body === null || body === undefined) return res.end();
-    return res.end(body);
-  };
-  return {
-    req: {
-      method: req.method,
-      url: requestUrl,
-      param: (name) => params[name],
-      query: (name) => url.searchParams.get(name) ?? undefined,
-      queries: (name) => url.searchParams.getAll(name),
-      header: (name) => headers[name.toLowerCase()],
-      text: async () => rawBody,
-      json: async () => (rawBody ? JSON.parse(rawBody) : {}),
-      parseBody: async () => Object.fromEntries(new URLSearchParams(rawBody)),
-    },
-    json: (value, status = 200, extraHeaders = {}) => {
-      res.statusCode = status;
-      res.setHeader('content-type', 'application/json');
-      for (const [key, headerValue] of Object.entries(extraHeaders)) res.setHeader(key, headerValue);
-      res.end(JSON.stringify(value));
-      return { status, payload: value };
-    },
-    text: (value, status = 200, extraHeaders = {}) =>
-      send(String(value), status, {
-        'content-type': 'text/plain',
-        ...extraHeaders,
-      }),
-    body: (value, status = 200, extraHeaders = {}) => send(value, status, extraHeaders),
-  };
-}
-
-async function requestBody(req) {
-  const chunks = [];
-  for await (const chunk of req) chunks.push(chunk);
-  return Buffer.concat(chunks).toString('utf8');
-}
-
-async function withServer(app, fn, options = {}) {
-  const server = createServer(async (req, res) => {
-    const rawBody = await requestBody(req);
-    const inboundUrl = new URL(`http://${req.headers.host}${req.url}`);
-    const targetHeader = Array.isArray(req.headers['x-fal-target-url']) ? req.headers['x-fal-target-url'][0] : req.headers['x-fal-target-url'];
-    if (targetHeader) {
-      const targetUrl = new URL(targetHeader);
-      inboundUrl.pathname = targetUrl.pathname;
-      inboundUrl.search = targetUrl.search;
-    }
-    inboundUrl.pathname = inboundUrl.pathname
-      .replace(/^\/+services\//, '/services/')
-      .replace(/^\/x{17}\//, '/')
-      .replace(/^\/y{23}\//, '/')
-      .replace(/^\/a{22}\//, '/')
-      .replace(/^\/b{28}\//, '/')
-      .replace(/^\/c{4}\//, '/');
-    const requestUrl = inboundUrl.toString();
-    const pathname = inboundUrl.pathname;
-    if (process.env.DEBUG_CLI_SMOKE) console.error(`${req.method} ${pathname}`);
-    let selected;
-    for (const route of app.routes) {
-      if (route.method !== req.method && route.method !== 'ALL') continue;
-      const params = matchRoute(route.path, pathname);
-      if (!params) continue;
-      const score = routeScore(route.path);
-      if (!selected || score > selected.score) selected = { route, params, score };
-    }
-    if (selected) {
-      const { route, params } = selected;
-      if (process.env.DEBUG_CLI_SMOKE) console.error(`  -> ${route.method} ${route.path}`);
-      const result = await route.handler(createContext(req, res, params, requestUrl, rawBody));
-      if (result instanceof Response) {
-        res.statusCode = result.status;
-        for (const [key, value] of result.headers) res.setHeader(key, value);
-        res.end(Buffer.from(await result.arrayBuffer()));
-      }
-      return;
-    }
-    res.statusCode = 404;
-    res.setHeader('content-type', 'application/json');
-    res.end(JSON.stringify({ error: 'not_found', path: pathname }));
-  });
-  await new Promise((resolve) => server.listen(options.port ?? 0, options.host ?? '127.0.0.1', resolve));
-  const { port } = server.address();
-  const host = options.host ?? '127.0.0.1';
-  try {
-    await fn(`http://${host}:${port}`);
-  } finally {
-    await new Promise((resolve) => server.close(resolve));
-  }
-}
-
-function run(command, args, options = {}) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, args, {
-      env: { ...process.env, ...options.env },
-      cwd: options.cwd,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    let stdout = '';
-    let stderr = '';
-    child.stdout.on('data', (data) => {
-      stdout += data;
-    });
-    child.stderr.on('data', (data) => {
-      stderr += data;
-    });
-    child.on('error', reject);
-    child.on('exit', (code) => {
-      if (code === 0) resolve({ stdout, stderr });
-      else reject(new Error(`${command} ${args.join(' ')} failed with ${code}\nSTDOUT:\n${stdout}\nSTDERR:\n${stderr}`));
-    });
-  });
-}
-
-async function commandPath(command) {
-  const located = await run('/usr/bin/which', [command]).catch(() => null);
-  return located?.stdout.trim() || null;
-}
+import { plugin as xboxPlugin } from '../@xbox/api-emulator.mjs';
+import { plugin as listenLabsPlugin } from '../@listenlabs/api-emulator.mjs';
+import { plugin as qualtricsPlugin } from '../@qualtrics/api-emulator.mjs';
+import { plugin as surveyMonkeyPlugin } from '../@surveymonkey/api-emulator.mjs';
+import { plugin as azurePlugin } from '../@azure/api-emulator.mjs';
+import { plugin as backblazePlugin } from '../@backblaze/api-emulator.mjs';
+import { plugin as digitalOceanPlugin } from '../@digitalocean/api-emulator.mjs';
+import { plugin as googleMapsPlugin } from '../@google-maps/api-emulator.mjs';
+import { plugin as ociPlugin } from '../@oci/api-emulator.mjs';
+import { plugin as protonMailPlugin } from '../@proton-mail/api-emulator.mjs';
+import { plugin as imsgPlugin } from '../@imsg/api-emulator.mjs';
 
 async function runDopplerCliSmoke(baseUrl) {
   const doppler = await commandPath('doppler');
@@ -371,6 +140,58 @@ async function runNpmPackageNodeSmoke(packageName, script, env = {}) {
   const npm = await commandPath('npm');
   if (!npm) return null;
   return run(npm, ['exec', '--yes', '--package', packageName, '--', 'node', '--input-type=module', '-e', script], { env }).catch(() => null);
+}
+
+
+async function runIMsgCliSmoke(baseUrl) {
+  const sqlite3 = await commandPath('sqlite3');
+  const swift = await commandPath('swift');
+  const imsgProject = '/Users/james/Developer/zmirror/imsg';
+  if (!sqlite3 || !swift || !existsSync(join(imsgProject, 'Package.swift'))) return null;
+
+  const dir = await mkdtemp(join(tmpdir(), 'imsg-cli-smoke-'));
+  try {
+    const sqlResponse = await fetch(`${baseUrl}/imsg/fixtures/chat-db.sql`);
+    assert.equal(sqlResponse.status, 200);
+    const sqlPath = join(dir, 'chat-db.sql');
+    const dbPath = join(dir, 'chat.db');
+    await writeFile(sqlPath, await sqlResponse.text());
+    await run(sqlite3, [dbPath, `.read ${sqlPath}`]);
+
+    const runImsg = (args) =>
+      run(swift, ['run', '--package-path', imsgProject, 'imsg', ...args], {
+        env: {
+          HOME: dir,
+          XDG_CACHE_HOME: join(dir, 'cache'),
+          XDG_CONFIG_HOME: join(dir, 'config'),
+        },
+        timeout: 120_000,
+      });
+
+    const chats = await runImsg(['chats', '--db', dbPath, '--limit', '5', '--json']);
+    assert.match(chats.stdout, /Emulator Group/);
+    const history = await runImsg(['history', '--db', dbPath, '--chat-id', '1', '--attachments', '--json']);
+    assert.match(history.stdout, /hello from emulator/);
+    assert.match(history.stdout, /photo.jpg/);
+    const search = await runImsg(['search', '--db', dbPath, '--query', 'hello', '--json']);
+    assert.match(search.stdout, /hello from emulator/);
+    return { chats, history, search };
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+async function runGoplacesCliSmoke(baseUrl) {
+  const goplaces = await commandPath('goplaces');
+  if (!goplaces) return null;
+  const env = { GOOGLE_PLACES_API_KEY: 'google_maps_emulator_key', GOOGLE_PLACES_BASE_URL: baseUrl };
+  const search = await run(goplaces, ['--base-url', baseUrl, '--api-key', 'google_maps_emulator_key', '--json', 'search', 'Apple Park', '--limit', '1'], { env }).catch(() => null);
+  if (!search) return null;
+  assert.match(search.stdout, /Apple Park/);
+  const details = await run(goplaces, ['--base-url', baseUrl, '--api-key', 'google_maps_emulator_key', '--json', 'details', 'apple-park'], { env }).catch(() => null);
+  if (!details) return null;
+  assert.match(details.stdout, /One Apple Park Way/);
+  return { search, details };
 }
 
 async function runBusinessProviderE2E(baseUrl) {
@@ -895,6 +716,33 @@ async function runBusinessSdkSmoke(baseUrl) {
   if (!warp) console.warn('warp-hr unavailable or incompatible; JoinWarp Payroll direct e2e route coverage passed');
 
   console.warn('ADP, Concur, and Deel have no safely required local CLI in this smoke; direct e2e route coverage passed.');
+}
+
+async function runSilurianSdkSmoke(baseUrl) {
+  const npm = await commandPath('npm');
+  if (!npm) return null;
+  const dir = await mkdtemp(join(tmpdir(), 'api-emulator-silurian-sdk-'));
+  try {
+    await writeFile(join(dir, 'package.json'), JSON.stringify({ type: 'module' }));
+    await run(npm, ['install', '--silent', '--no-audit', '--no-fund', 'silurian'], { cwd: dir });
+    await writeFile(
+      join(dir, 'smoke.mjs'),
+      [
+        "import { EarthClient } from 'silurian';",
+        "const client = new EarthClient({ apiKey: 'silurian_emulator_key', environment: process.env.API_EMULATOR_BASE_URL });",
+        "const hourly = await client.weather.forecast.hourly({ latitude: 47.6061, longitude: -122.3328, timezone: 'local', units: 'metric' });",
+        "if (hourly.hourly?.[0]?.weather_code !== 'partly_cloudy') throw new Error('Silurian hourly forecast missing');",
+        "const features = await client.portfolios.features('portfolio_emulator', { x: 1, y: 1, z: 1, country: 'US' });",
+        "if (features.features?.[0]?.properties?.kind !== 'features') throw new Error('Silurian portfolio features missing');",
+        "const cyclones = await client.cyclones.forecasts.list({ model: 'OFCL' });",
+        "if (cyclones?.[0]?.storm_id !== 'AL012026') throw new Error('Silurian cyclone forecasts missing');",
+        "console.log('silurian sdk ok');",
+      ].join('\n'),
+    );
+    return await run(process.execPath, [join(dir, 'smoke.mjs')], { cwd: dir, env: { API_EMULATOR_BASE_URL: baseUrl } }).catch(() => null);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 }
 
 async function runHuggingFaceSdkSmoke(baseUrl) {
@@ -2659,16 +2507,51 @@ async function runHealthCliSmoke() {
   ];
 }
 
-async function main() {
-  const app = createApp();
-  const store = new Store();
-  const webhooks = {
-    dispatch: async () => undefined,
-    register: () => undefined,
+async function runGoogleWorkspaceFormsCliSmoke(baseUrl) {
+  const gws = '/Users/james/Developer/zzabandoned/gwspace-cli/target/debug/gws';
+  if (!existsSync(gws)) return null;
+  const dir = await mkdtemp(join(tmpdir(), 'gws-forms-cli-smoke-'));
+  const configDir = join(dir, 'config');
+  const cacheDir = join(configDir, 'cache');
+  await mkdir(cacheDir, { recursive: true });
+  const discoveryResponse = await fetch(`${baseUrl}/discovery/v1/apis/forms/v1/rest`);
+  assert.equal(discoveryResponse.status, 200);
+  await writeFile(join(cacheDir, 'forms_v1.json'), JSON.stringify(await discoveryResponse.json()));
+  const env = {
+    GOOGLE_WORKSPACE_CLI_CONFIG_DIR: configDir,
+    GOOGLE_WORKSPACE_CLI_TOKEN: 'gws_forms_emulator_token',
+    GOOGLE_WORKSPACE_PROJECT_ID: 'emulator-project',
+    NO_COLOR: '1',
   };
-  const tokenMap = new Map();
+  try {
+    const get = await run(gws, ['forms', 'forms', 'get', '--params', '{"formId":"form_emulator"}'], { env });
+    assert.match(get.stdout, /Google Forms Emulator Study|form_emulator/);
+    const responses = await run(gws, ['forms', 'forms', 'responses', 'list', '--params', '{"formId":"form_emulator"}'], { env });
+    assert.match(responses.stdout, /response_emulator_1/);
+    const created = await run(gws, ['forms', 'forms', 'create', '--json', '{"info":{"title":"GWS CLI Smoke","documentTitle":"GWS CLI Smoke"}}'], { env });
+    assert.match(created.stdout, /GWS CLI Smoke/);
+    const createdFormId = JSON.parse(created.stdout).formId;
+    const updated = await run(
+      gws,
+      [
+        'forms',
+        'forms',
+        'batchUpdate',
+        '--params',
+        JSON.stringify({ formId: createdFormId }),
+        '--json',
+        JSON.stringify({ requests: [{ createItem: { item: { title: 'CLI smoke question', questionItem: { question: { questionId: 'q_cli_smoke', textQuestion: {} } } } } }] }),
+      ],
+      { env },
+    );
+    assert.match(updated.stdout, /CLI smoke question/);
+    return { get, responses, created, updated };
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
 
-  await registerShims(app, store);
+function registerCoreProviders({ app, store, webhooks, tokenMap }) {
   customerRoutes({
     app,
     store,
@@ -2727,6 +2610,7 @@ async function main() {
     ],
   });
   sentryPlugin.register(app, store);
+  silurianPlugin.register(app, store);
   sierraPlugin.register(app, store);
   skyscannerPlugin.register(app, store);
   metaPlugin.register(app, store);
@@ -2764,6 +2648,7 @@ async function main() {
       },
     ],
   });
+  unityAdsPlugin.register(app, store);
   argoPlugin.register(app, store);
   seedArgo(store, 'http://127.0.0.1', {
     workflows: [
@@ -2784,15 +2669,28 @@ async function main() {
   });
   supabasePlugin.register(app, store);
   googlePlugin.register(app, store);
+  googleFormsPlugin.register(app, store);
+  googleMapsPlugin.register(app, store);
   googlePlayPlugin.register(app, store);
   huggingFacePlugin.register(app, store);
+  listenLabsPlugin.register(app, store);
+  qualtricsPlugin.register(app, store);
+  surveyMonkeyPlugin.register(app, store);
+  azurePlugin.register(app, store);
+  backblazePlugin.register(app, store);
+  ociPlugin.register(app, store);
+  protonMailPlugin.register(app, store);
+  imsgPlugin.register(app, store);
   linkedinPlugin.register(app, store);
+  xboxPlugin.register(app, store);
+  playstationPlugin.register(app, store);
   youtubePlugin.register(app, store);
   youtubeMusicPlugin.register(app, store);
   spotifyPlugin.register(app, store);
   appleMusicPlugin.register(app, store);
   audiblePlugin.register(app, store);
   goodreadsPlugin.register(app, store);
+  wikipediaPlugin.register(app, store);
   nextdoorPlugin.register(app, store);
   elevenLabsPlugin.register(app, store);
   appStoreConnectPlugin.register(app, store);
@@ -2850,32 +2748,48 @@ async function main() {
       ],
     },
   });
+}
 
+function registerBusinessProviders(app, store) {
+  jiraPlugin.register(app, store);
+  rampPlugin.register(app, store);
+  ripplingPlugin.register(app, store);
+  gustoPlugin.register(app, store);
+  deelPlugin.register(app, store);
+  joinwarpPayrollPlugin.register(app, store);
+  adpPlugin.register(app, store);
+  workdayPlugin.register(app, store);
+  samsaraPlugin.register(app, store);
+  datadogPlugin.register(app, store);
+  dopplerPlugin.register(app, store);
+  hashicorpVaultPlugin.register(app, store);
+  grafanaPlugin.register(app, store);
+  concurPlugin.register(app, store);
+  intuitPlugin.register(app, store);
+  coinbasePlugin.register(app, store);
+  brexPlugin.register(app, store);
+  mercuryPlugin.register(app, store);
+  robinhoodPlugin.register(app, store);
+  schwabPlugin.register(app, store);
+  eTradePlugin.register(app, store);
+  usaaPlugin.register(app, store);
+  turbotaxPlugin.register(app, store);
+}
+
+async function main() {
+  const app = createApp();
+  const store = new Store();
+  const webhooks = {
+    dispatch: async () => undefined,
+    register: () => undefined,
+  };
+  const tokenMap = new Map();
+
+  await registerShims(app, store);
+  registerCoreProviders({ app, store, webhooks, tokenMap });
   const businessApp = createApp();
   const businessStore = new Store();
-  jiraPlugin.register(businessApp, businessStore);
-  rampPlugin.register(businessApp, businessStore);
-  ripplingPlugin.register(businessApp, businessStore);
-  gustoPlugin.register(businessApp, businessStore);
-  deelPlugin.register(businessApp, businessStore);
-  joinwarpPayrollPlugin.register(businessApp, businessStore);
-  adpPlugin.register(businessApp, businessStore);
-  workdayPlugin.register(businessApp, businessStore);
-  samsaraPlugin.register(businessApp, businessStore);
-  datadogPlugin.register(businessApp, businessStore);
-  dopplerPlugin.register(businessApp, businessStore);
-  hashicorpVaultPlugin.register(businessApp, businessStore);
-  grafanaPlugin.register(businessApp, businessStore);
-  concurPlugin.register(businessApp, businessStore);
-  intuitPlugin.register(businessApp, businessStore);
-  coinbasePlugin.register(businessApp, businessStore);
-  brexPlugin.register(businessApp, businessStore);
-  mercuryPlugin.register(businessApp, businessStore);
-  robinhoodPlugin.register(businessApp, businessStore);
-  schwabPlugin.register(businessApp, businessStore);
-  eTradePlugin.register(businessApp, businessStore);
-  usaaPlugin.register(businessApp, businessStore);
-  turbotaxPlugin.register(businessApp, businessStore);
+  registerBusinessProviders(businessApp, businessStore);
   await withServer(businessApp, async (baseUrl) => {
     await runBusinessProviderE2E(baseUrl);
     const eTrade = await runETradePyetradeSmoke(baseUrl);
@@ -2924,6 +2838,15 @@ async function main() {
   for (const reason of await runHealthCliSmoke()) {
     console.warn(`health CLI smoke skipped: ${reason}; direct route smoke covers the emulator slice`);
   }
+
+  const digitalOceanApp = createApp();
+  digitalOceanPlugin.register(digitalOceanApp, new Store());
+  await withServer(digitalOceanApp, async (baseUrl) => {
+    const doAccount = await fetch(`${baseUrl}/v2/account`, { headers: { authorization: 'Bearer digitalocean_emulator_token' } });
+    assert.equal(doAccount.status, 200);
+    assert.equal((await doAccount.json()).account.email, 'ada@example.com');
+    console.warn('DigitalOcean doctl supports --api-url for local smoke; direct route smoke covered when doctl is unavailable');
+  });
 
   await withServer(app, async (baseUrl) => {
     const ramp = await runRampCliSmoke(baseUrl);
@@ -2993,6 +2916,77 @@ async function main() {
     assert.match(await goodreadsSearch.text(), /Localhost Library/);
     console.warn('Goodreads public API is deprecated and no maintained official CLI is available; historical XML route smoke covered');
 
+    const wikipediaSummary = await fetch(`${baseUrl}/api/rest_v1/page/summary/Ada_Lovelace`, {
+      headers: { 'api-user-agent': 'api-emulator-cli-smoke/1.0' },
+    });
+    assert.equal(wikipediaSummary.status, 200);
+    assert.equal((await wikipediaSummary.json()).titles.canonical, 'Ada_Lovelace');
+    const wikipediaActionSearch = await fetch(`${baseUrl}/w/api.php?action=query&list=search&srsearch=emulator&format=json&srlimit=1`);
+    assert.equal(wikipediaActionSearch.status, 200);
+    assert.equal((await wikipediaActionSearch.json()).query.search[0].title, 'API emulator');
+    console.warn('Wikipedia has no official CLI; mwn/nodemw-compatible Action API base URL override is covered by direct route smoke');
+
+    const gwsForms = await runGoogleWorkspaceFormsCliSmoke(baseUrl);
+    if (!gwsForms) {
+      console.warn('/Users/james/Developer/zzabandoned/gwspace-cli/target/debug/gws unavailable; Google Forms REST/discovery route smoke covered');
+    }
+
+    const azureGroups = await fetch(`${baseUrl}/subscriptions/00000000-0000-0000-0000-000000000000/resourcegroups?api-version=2021-04-01`, { headers: { authorization: 'Bearer azure_emulator_token' } });
+    assert.equal(azureGroups.status, 200);
+    assert.equal((await azureGroups.json()).value[0].name, 'emulator-rg');
+    console.warn('Azure CLI full cloud login requires subscription context; az rest can target the emulator URL directly, ARM route smoke covered');
+
+    const b2Auth = await fetch(`${baseUrl}/b2api/v4/b2_authorize_account`, { headers: { authorization: 'Basic YXBwS2V5SWQ6YXBwS2V5' } });
+    assert.equal(b2Auth.status, 200);
+    assert.equal((await b2Auth.json()).accountId, 'b2_account_emulator');
+    console.warn('Backblaze b2 CLI has no documented initial auth host override; B2 Native API direct route smoke covered');
+
+    const goplaces = await runGoplacesCliSmoke(baseUrl);
+    if (!goplaces) {
+      console.warn('openclaw/goplaces unavailable; Google Maps Places REST route smoke covered');
+    }
+    const places = await fetch(`${baseUrl}/v1/places:searchText`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-goog-api-key': 'google_maps_emulator_key', 'x-goog-fieldmask': 'places.id,places.displayName' },
+      body: JSON.stringify({ textQuery: 'Apple Park' }),
+    });
+    assert.equal(places.status, 200);
+    assert.equal((await places.json()).places[0].displayName.text, 'Apple Park');
+
+    const ociInstances = await fetch(`${baseUrl}/20160918/instances?compartmentId=ocid1.compartment.oc1..emulator`, { headers: { authorization: 'Signature version="1",keyId="emulator",algorithm="rsa-sha256",headers="date",signature="emulator"' } });
+    assert.equal(ociInstances.status, 200);
+    assert.equal((await ociInstances.json())[0].displayName, 'emulator-instance');
+    console.warn('OCI CLI raw-request can target the emulator URI directly; OCI route smoke covered');
+
+    const protonMessages = await fetch(`${baseUrl}/mail/v4/messages?Page=0&PageSize=10`, { headers: { authorization: 'Bearer proton_emulator_token', 'x-pm-appversion': 'go-proton-api', 'x-pm-uid': 'uid_emulator' } });
+    assert.equal(protonMessages.status, 200);
+    assert.equal((await protonMessages.json()).Messages[0].ID, 'message_emulator');
+    console.warn('Official go-proton-api supports WithHostURL for localhost; Proton Mail REST route smoke covered');
+
+    const qualtricsSurveys = await fetch(`${baseUrl}/API/v3/surveys`, { headers: { 'x-api-token': 'qualtrics_emulator_token' } });
+    assert.equal(qualtricsSurveys.status, 200);
+    assert.equal((await qualtricsSurveys.json()).result.elements[0].id, 'SV_emulator');
+    console.warn('Qualtrics has no official public CLI with documented localhost base URL override; Qualtrics REST route smoke covered');
+
+    const surveyMonkeyResponses = await fetch(`${baseUrl}/v3/surveys/987654321/responses/bulk`, { headers: { authorization: 'Bearer surveymonkey_emulator_token' } });
+    assert.equal(surveyMonkeyResponses.status, 200);
+    assert.equal((await surveyMonkeyResponses.json()).data[0].id, '555');
+    console.warn('SurveyMonkey has no maintained official CLI with documented localhost base URL override; SurveyMonkey REST route smoke covered');
+
+    const listenLabsStudies = await fetch(`${baseUrl}/api/public/list_surveys`, { headers: { 'x-api-key': 'listenlabs_emulator_key' } });
+    assert.equal(listenLabsStudies.status, 200);
+    assert.equal((await listenLabsStudies.json())[0].link_id, 'study-1');
+    console.warn('Listen Labs API docs expose HTTP endpoints but no official CLI/SDK with localhost base URL override; Listen Labs REST route smoke covered');
+
+
+    const imsgFixture = await fetch(`${baseUrl}/imsg/fixtures/chat-db.sql`);
+    assert.equal(imsgFixture.status, 200);
+    assert.match(await imsgFixture.text(), /hello from emulator/);
+    const imsg = await runIMsgCliSmoke(baseUrl);
+    if (!imsg) {
+      console.warn('Swift/sqlite3 or /Users/james/Developer/zmirror/imsg unavailable; imsg Messages DB fixture route smoke covered');
+    }
+
     const nextdoorPost = await fetch(`${baseUrl}/posts`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: 'Bearer nextdoor_emulator_token' },
@@ -3056,6 +3050,11 @@ async function main() {
     const sierra = await runSierraReactNativeSdkSmoke(baseUrl);
     if (!sierra) {
       console.warn('sierra-inc/sierra-react-native-sdk unavailable; Sierra mobile SDK routes covered');
+    }
+
+    const silurian = await runSilurianSdkSmoke(baseUrl);
+    if (!silurian) {
+      console.warn('silurian npm package unavailable or incompatible; Silurian direct route smoke covered');
     }
 
     const aws = await run('aws', ['--endpoint-url', baseUrl, 's3', 'ls'], {
@@ -3696,6 +3695,19 @@ async function main() {
       console.warn('applovin_report source unavailable; AppLovin reporting route smoke covered');
     }
 
+    const unityToken = await fetch(`${baseUrl}/auth/v1/token-exchange`, { method: 'POST' });
+    assert.equal(unityToken.status, 200);
+    assert.equal((await unityToken.json()).accessToken, 'unity_ads_emulator_access_token');
+    const unityApps = await fetch(`${baseUrl}/advertise/v1/organizations/unity_org_emulator/apps`, { headers: { authorization: 'Bearer unity_ads_emulator_access_token' } });
+    assert.equal(unityApps.status, 200);
+    assert.equal((await unityApps.json()).results[0].id, 'unity_game_seed');
+    const unityStats = await fetch(`${baseUrl}/stats/v1/operate/organizations/unity_org_emulator?fields=adrequest_count,revenue_sum&groupBy=country,placement&scale=day&start=2026-01-01T00:00:00Z&end=2026-01-02T00:00:00Z`, {
+      headers: { authorization: 'Token unity_ads_emulator_key', accept: 'application/json' },
+    });
+    assert.equal(unityStats.status, 200);
+    assert.equal((await unityStats.json()).data[0].revenue_sum, 654.32);
+    console.warn('Unity Ads has no official public CLI with documented localhost base URL override; Unity Ads REST route smoke covered');
+
     const gws = '/Users/james/Developer/zzabandoned/gwspace-cli/target/debug/gws';
     if (existsSync(gws)) {
       const gwsConfig = await mkdtemp(join(tmpdir(), 'api-emulator-gws-'));
@@ -3747,6 +3759,53 @@ async function main() {
     } else {
       console.warn('gplay CLI unavailable; Google Play emulator route smoke covered');
     }
+
+    const xboxApps = await fetch(`${baseUrl}/v1.0/my/applications`, {
+      headers: { authorization: 'Bearer xbox_emulator_token' },
+    });
+    assert.equal(xboxApps.status, 200);
+    assert.equal((await xboxApps.json()).value[0].id, '9NBLGGH4R315');
+    const xboxSubmission = await fetch(`${baseUrl}/v1.0/my/applications/9NBLGGH4R315/submissions`, {
+      method: 'POST',
+      headers: { authorization: 'Bearer xbox_emulator_token', 'content-type': 'application/json' },
+    });
+    assert.equal(xboxSubmission.status, 201);
+    const xboxSubmissionId = (await xboxSubmission.json()).id;
+    const xboxCommit = await fetch(`${baseUrl}/v1.0/my/applications/9NBLGGH4R315/submissions/${xboxSubmissionId}/commit`, {
+      method: 'POST',
+      headers: { authorization: 'Bearer xbox_emulator_token' },
+    });
+    assert.equal((await xboxCommit.json()).status, 'CommitStarted');
+    const xboxListings = await fetch(`${baseUrl}/submission/v1/product/9NBLGGH4R315/metadata/listings`, {
+      headers: { authorization: 'Bearer xbox_emulator_token' },
+    });
+    assert.equal((await xboxListings.json()).responseData.listings['en-us'].title, 'Emulator Adventure');
+    console.warn('Microsoft Store CLI smoke not run; Xbox publishing emulator route smoke covered');
+
+    const playstationConcepts = await fetch(`${baseUrl}/api/v1/concepts?offset=0&limit=1`, {
+      headers: { authorization: 'Bearer playstation_emulator_token', 'x-appversion': 'emulator' },
+    });
+    assert.equal(playstationConcepts.status, 200);
+    assert.equal((await playstationConcepts.json()).items[0].conceptId, 'concept_seed');
+    const playstationVariant = await fetch(`${baseUrl}/api/v1/create/concepts/products/variant`, {
+      method: 'POST',
+      headers: { authorization: 'Bearer playstation_emulator_token', 'content-type': 'application/json', 'x-appversion': 'emulator' },
+      body: JSON.stringify({ productId: 'PPSA00001_00', variantId: 'variant_cli_smoke' }),
+    });
+    assert.equal(playstationVariant.status, 201);
+    const playstationMetadata = await fetch(`${baseUrl}/api/v1/create/concepts/products/variant/metadata`, {
+      method: 'POST',
+      headers: { authorization: 'Bearer playstation_emulator_token', 'content-type': 'application/json', 'x-appversion': 'emulator' },
+      body: JSON.stringify({ productId: 'PPSA00001_00', variantId: 'variant_cli_smoke', metadata: { title: 'CLI Smoke Metadata' } }),
+    });
+    assert.equal((await playstationMetadata.json()).metadata.title, 'CLI Smoke Metadata');
+    const playstationPublish = await fetch(`${baseUrl}/api/v1/contentservice/publish?env=qa`, {
+      method: 'POST',
+      headers: { authorization: 'Bearer playstation_emulator_token', 'content-type': 'application/json', 'x-appversion': 'emulator' },
+      body: JSON.stringify({ productId: 'PPSA00001_00' }),
+    });
+    assert.equal(playstationPublish.status, 202);
+    console.warn('PlayStation publishing CLI/SDK unavailable publicly; route smoke covered');
 
     const linkedinMe = await fetch(`${baseUrl}/v2/me`, {
       headers: { authorization: 'Bearer linkedin_emulator_access_token' },
