@@ -203,6 +203,113 @@ export function createAdPlatformPlugin({ provider, label, docs, source, scope })
         store.setData?.(key, hits);
       }
 
+      app.get('/inspect/contract', (c) => c.json(contract));
+      app.get('/inspect/state', (c) => c.json(state(store, provider)));
+      app.post('/inspect/reset', (c) => {
+        saveState(store, provider, initialState(provider));
+        return c.json({ ok: true });
+      });
+
+      app.post('/campaign/create', async (c) => {
+        hit('tiktok.campaign.create');
+        const next = state(store, provider);
+        const body = await c.req.json().catch(() => ({}));
+        const campaign = {
+          id: `${provider}_campaign_${next.nextCampaignId++}`,
+          name: body.campaign_name ?? body.name ?? `${label} Campaign`,
+          status: 'active',
+          budget: Number(body.budget ?? 0),
+          platform: provider,
+          objective: String(body.objective_type ?? body.objective ?? 'conversions').toLowerCase(),
+          createdAt: now(),
+          updatedAt: now(),
+        };
+        next.campaigns.push(campaign);
+        saveState(store, provider, next);
+        return c.json({ code: 0, message: 'OK', data: { campaign_id: campaign.id } });
+      });
+
+      app.post('/campaign/update', async (c) => {
+        hit('tiktok.campaign.update');
+        const next = state(store, provider);
+        const body = await c.req.json().catch(() => ({}));
+        const campaign = next.campaigns.find((item) => item.id === body.campaign_id);
+        if (!campaign) return c.json({ code: 404, message: 'Campaign not found' }, 404);
+        if (body.campaign_name) campaign.name = body.campaign_name;
+        if (body.budget !== undefined) campaign.budget = Number(body.budget);
+        if (body.campaign_status) campaign.status = body.campaign_status === 'DISABLE' || body.campaign_status === 'PAUSED' ? 'paused' : 'active';
+        campaign.updatedAt = now();
+        saveState(store, provider, next);
+        return c.json({ code: 0, message: 'OK', data: { campaign_id: campaign.id } });
+      });
+
+      app.post('/campaign/status/update', async (c) => {
+        hit('tiktok.campaign.status');
+        const next = state(store, provider);
+        const body = await c.req.json().catch(() => ({}));
+        const ids = new Set(body.campaign_ids ?? []);
+        for (const campaign of next.campaigns.filter((item) => ids.has(item.id))) {
+          campaign.status = body.operation_status === 'PAUSE' ? 'paused' : body.operation_status === 'DELETE' ? 'archived' : 'active';
+          campaign.updatedAt = now();
+        }
+        saveState(store, provider, next);
+        return c.json({ code: 0, message: 'OK', data: {} });
+      });
+
+      app.get('/campaign/get', (c) => {
+        hit('tiktok.campaign.list');
+        const campaigns = state(store, provider).campaigns;
+        const ids = c.req.query('campaign_ids');
+        let list = campaigns;
+        if (ids) {
+          const wanted = new Set(JSON.parse(ids));
+          list = campaigns.filter((campaign) => wanted.has(campaign.id));
+        }
+        return c.json({ code: 0, message: 'OK', data: { list: list.map(toTikTokCampaign), page_info: { total_count: list.length, page_size: list.length, page_number: 1 } } });
+      });
+
+      app.post('/report/campaign/get', async (c) => {
+        hit('tiktok.report');
+        const body = await c.req.json().catch(() => ({}));
+        return c.json({
+          code: 0,
+          message: 'OK',
+          data: {
+            list: [{ campaign_id: body.campaign_ids?.[0], spend: 321.45, impressions: 12000, clicks: 840, ctr: 0.07, cpc: 0.3827, conversions: 42 }],
+            page_info: { total_count: 1, page_size: 100, page_number: 1 },
+          },
+        });
+      });
+
+      app.get('/applovin/campaigns', (c) => {
+        hit('applovin.campaign.list');
+        return c.json({ campaigns: state(store, provider).campaigns.map(toAppLovinCampaign) });
+      });
+
+      app.post('/applovin/campaigns', async (c) => {
+        hit('applovin.campaign.create');
+        const next = state(store, provider);
+        const body = await c.req.json().catch(() => ({}));
+        const campaign = {
+          id: `${provider}_campaign_${next.nextCampaignId++}`,
+          name: body.name ?? `${label} Campaign`,
+          status: body.status ?? 'active',
+          budget: Number(body.daily_budget ?? body.budget ?? 0),
+          platform: provider,
+          objective: body.goal ?? body.objective ?? 'conversions',
+          createdAt: now(),
+          updatedAt: now(),
+        };
+        next.campaigns.push(campaign);
+        saveState(store, provider, next);
+        return c.json(toAppLovinCampaign(campaign), 201);
+      });
+
+      app.get('/applovin/reports/campaigns', (c) => {
+        hit('applovin.report');
+        return c.json({ results: [{ spend: 321.45, impressions: 12000, clicks: 840, conversions: 42 }] });
+      });
+
       function getMetaCampaign(c) {
         hit('meta.campaign.get');
         const campaign = state(store, provider).campaigns.find((item) => item.id === c.req.param('campaignId'));
