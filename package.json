@@ -4,6 +4,10 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
+    "provider-wall": "node scripts/update-provider-wall.mjs",
+    "check:provider-wall": "node scripts/update-provider-wall.mjs --check",
+    "provider-readmes": "node scripts/generate-provider-readmes.mjs",
+    "check:provider-readmes": "node scripts/generate-provider-readmes.mjs --check",
     "contract:cloudflare": "node scripts/check-cloudflare-openapi-coverage.mjs",
     "contract:github": "node scripts/check-github-openapi-coverage.mjs",
     "contract:google-workspace": "node scripts/check-google-workspace-coverage.mjs",

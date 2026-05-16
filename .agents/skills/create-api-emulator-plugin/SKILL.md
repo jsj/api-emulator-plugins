@@ -14,6 +14,7 @@ Create a provider plugin that:
 - Exports `contract` and `plugin` from `@provider/api-emulator.mjs` or `@provider/api-emulator/src/index.ts`.
 - Implements the smallest useful stateful REST/API slice from official contract sources.
 - Adds the provider to `api-emulator.catalog.json`.
+- Adds or updates the provider package README when the provider uses the package layout.
 - Adds route smoke coverage, and when possible CLI-backed smoke coverage in `scripts/cli-verification-smoke.mjs`.
 - Keeps all external CLI config, cloned repos, credentials, and patches in temporary directories.
 
@@ -61,7 +62,52 @@ Create a provider plugin that:
    - Add an `api-emulator.catalog.json` entry with `kind`, `packageName`, `specifier`, and a concise description.
    - Follow existing naming: folder `@provider`, package name `@api-emulator/provider`, plugin name `provider`.
 
-5. **Add smoke coverage**
+5. **Add the provider README when applicable**
+   - For package-layout providers, add `@provider/api-emulator/README.md`.
+   - Keep it provider-specific; do not duplicate plugin-authoring instructions in the root README.
+   - Use this shape:
+
+```md
+# @api-emulator/<provider>
+
+One-sentence description of what this provider emulates.
+
+Part of [emulate](https://github.com/jsj/api-emulator) — local drop-in replacement services for CI and no-network sandboxes.
+
+## Install
+
+\`\`\`bash
+npm install @api-emulator/<provider>
+\`\`\`
+
+## Run
+
+\`\`\`bash
+npx -p api-emulator api --plugin ./@<provider>/api-emulator.mjs --service <provider>
+\`\`\`
+
+## Endpoints
+
+- \`GET /example\` — what this endpoint returns
+
+## Auth
+
+Describe accepted fake tokens, headers, workspace/team scoping, and pagination conventions.
+
+## Seed Configuration
+
+\`\`\`yaml
+<provider>:
+  key: value
+\`\`\`
+
+## Links
+
+- [Official API docs](https://example.com/docs)
+- [api-emulator](https://github.com/jsj/api-emulator)
+```
+
+6. **Add smoke coverage**
    - Add direct route smoke for the first slice.
    - Add CLI smoke behind availability/build checks so local development remains ergonomic.
    - For OSS CLIs, clone/build/patch in temp dirs and avoid mutating user config.
@@ -105,6 +151,7 @@ Create a provider plugin that:
 
 - Provider plugin exports load successfully.
 - Catalog entry points at the implemented plugin.
+- Package README exists for package-layout providers and follows the provider README shape.
 - Direct smoke tests pass.
 - CLI smoke passes, or is explicitly skipped with a tracked reason when no safe base URL control exists.
 - `npm run smoke` or the relevant scoped smoke command passes after the change.
